@@ -1,0 +1,19 @@
+rules_version = '2';
+
+// Upload Manager SDK — Firestore rules template.
+// Only needed when SyncPolicy != NONE or dedup is enabled (M2+).
+// See docs/spec-revisions/01-deduplication.md §5 and 04-firestore-sync.md.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/files/{taskId} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /users/{uid}/uploadTasks/{taskId} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    // Per-uid dedup index — owner read/write only. No Cloud Functions.
+    match /users/{uid}/checksumIndex/{checksum} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}
