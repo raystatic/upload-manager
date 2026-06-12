@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="upload_manager_notification_title">Uploading files</string>
+    <string name="upload_manager_channel_name">File uploads</string>
+</resources>
