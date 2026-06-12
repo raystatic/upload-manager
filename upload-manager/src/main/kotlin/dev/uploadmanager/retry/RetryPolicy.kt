@@ -11,7 +11,12 @@ import java.util.concurrent.TimeUnit
  */
 data class RetryPolicy(
     val fastTierMaxAttempts: Int = 5,
-    val fastTierBackoffBaseMs: Long = 2_000L,
+    /**
+     * Base delay fed to WorkManager's setBackoffCriteria. WorkManager clamps
+     * backoff to a 10-second minimum (WorkRequest.MIN_BACKOFF_MILLIS), so values
+     * below 10_000 are effectively raised to it.
+     */
+    val fastTierBackoffBaseMs: Long = 10_000L,
     val parkDelaysMs: List<Long> = listOf(
         TimeUnit.MINUTES.toMillis(15),
         TimeUnit.HOURS.toMillis(1),

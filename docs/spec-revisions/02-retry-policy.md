@@ -37,7 +37,7 @@ object RetryClassifier {
 
 The worker maps the classification onto WorkManager:
 
-- `RETRY_FAST` → `Result.retry()`. The WorkRequest is built with `setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 2, TimeUnit.SECONDS)`; WorkManager applies the exponential schedule and jitter. The SDK never sleeps or self-schedules a delay.
+- `RETRY_FAST` → `Result.retry()`. The WorkRequest is built with `setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)` — WorkManager clamps backoff to a 10-second minimum (`WorkRequest.MIN_BACKOFF_MILLIS`), so 10 s is the floor — and applies the exponential schedule and jitter. The SDK never sleeps or self-schedules a delay.
 - `PARK` → write state `PARKED` to Room, return `Result.failure()` for **this WorkRequest only** (the task is not failed — see §3).
 - `TERMINAL` → write state `FAILED`/`CANCELLED`, return `Result.failure()`, emit `sdk.upload.failed`.
 
@@ -56,7 +56,7 @@ The worker maps the classification onto WorkManager:
                                             ───────────────▶  FAILED (terminal)
 ```
 
-**Fast tier** — handles radio blips and transient 5xx. In-worker, via WorkManager backoff: ~2 s, 4 s, 8 s, 16 s, 32 s (≤ `fastTierMaxAttempts = 5`).
+**Fast tier** — handles radio blips and transient 5xx. In-worker, via WorkManager backoff: ~10 s, 20 s, 40 s, 80 s, 160 s (≤ `fastTierMaxAttempts = 5`; WorkManager's minimum backoff is 10 s).
 
 **Park tier** — handles real outages: airplane mode, days without WiFi, server incidents. A `PARKED` task holds no WorkRequest and consumes zero resources. It is re-dispatched (fresh WorkRequest, fast-tier counter reset) by any of:
 
@@ -73,7 +73,7 @@ Park durations escalate per park event: 15 min → 1 h → 6 h → 24 h (capped)
 ```kotlin
 data class RetryPolicy(
     val fastTierMaxAttempts: Int = 5,
-    val fastTierBackoffBaseMs: Long = 2_000L,      // fed to setBackoffCriteria
+    val fastTierBackoffBaseMs: Long = 10_000L,     // fed to setBackoffCriteria; WorkManager's floor
     val parkDelaysMs: List<Long> = listOf(15.min, 1.hr, 6.hr, 24.hr),
     val taskTtl: Duration = 7.days,                // configurable per UploadManagerConfig
 )

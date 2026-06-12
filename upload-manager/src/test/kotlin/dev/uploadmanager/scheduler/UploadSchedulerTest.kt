@@ -102,6 +102,7 @@ class UploadSchedulerTest {
         val request = scheduler.buildRequest(t)
         assertTrue(request.tags.contains(t.id))
         assertTrue(request.tags.contains(UploadScheduler.TAG_UPLOAD))
-        assertEquals(2_000L, request.workSpec.backoffDelayDuration)
+        // WorkManager clamps backoff to MIN_BACKOFF_MILLIS (10s); the policy default matches.
+        assertEquals(10_000L, request.workSpec.backoffDelayDuration)
     }
 }
