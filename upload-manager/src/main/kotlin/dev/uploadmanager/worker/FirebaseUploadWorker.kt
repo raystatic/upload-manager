@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
@@ -30,6 +31,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.tasks.await
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -55,39 +57,77 @@ class FirebaseUploadWorker(
         val policy = core.config.retryPolicy
 
         if (policy.isExpired(task.firstAttemptAt, now)) {
-            core.dao.updateState(taskId, UploadState.FAILED, ERROR_TTL_EXCEEDED, now)
-            core.events.emit(UploadEvent.Failed(taskId, ERROR_TTL_EXCEEDED))
+            terminalFail(core, taskId, ERROR_TTL_EXCEEDED, now)
             return Result.failure()
         }
         core.dao.markFirstAttempt(taskId, now)
 
-        // Revision doc 03 §4: a deleted/unreadable source is permanent — never retried.
-        if (SourceChecker.check(applicationContext, Uri.parse(task.localUri)) is SourceChecker.Result.Gone) {
-            core.dao.updateState(taskId, UploadState.FAILED, ERROR_SOURCE_GONE, now)
-            core.events.emit(UploadEvent.Failed(taskId, ERROR_SOURCE_GONE))
-            return Result.failure()
+        // Revision doc 03 §4: validate the source before transferring any byte.
+        val current = when (val outcome = validateSource(core, task)) {
+            SourceOutcome.Gone -> {
+                terminalFail(core, taskId, ERROR_SOURCE_GONE, System.currentTimeMillis())
+                return Result.failure()
+            }
+            is SourceOutcome.Proceed -> outcome.task
         }
 
         // The Storage path is scoped to the enqueueing uid; wait (parked) if that
         // user is not currently signed in rather than failing or burning retries.
         val user = FirebaseAuth.getInstance().currentUser
-        if (user == null || user.uid != task.uid) {
-            return park(core, task, ERROR_AUTH_UNAVAILABLE)
+        if (user == null || user.uid != current.uid) {
+            return park(core, current, ERROR_AUTH_UNAVAILABLE)
         }
 
-        if (task.fileSizeBytes >= core.config.foregroundThresholdBytes) {
+        if (current.fileSizeBytes >= core.config.foregroundThresholdBytes) {
             // Best-effort: background-start restrictions (Android 12+) can reject this.
             runCatching { setForeground(getForegroundInfo()) }
         }
 
-        return core.uploadPermits.withPermit { transfer(core, task) }
+        return core.uploadPermits.withPermit { transfer(core, current) }
+    }
+
+    private sealed class SourceOutcome {
+        object Gone : SourceOutcome()
+        data class Proceed(val task: UploadTaskEntity) : SourceOutcome()
+    }
+
+    /**
+     * A staged task uploads an immutable copy (only existence matters). A REFERENCE
+     * task is fingerprinted: a deleted source is terminal (never retried), and a
+     * changed source restarts from byte 0 with the current bytes (revision doc 03 §4).
+     */
+    private suspend fun validateSource(core: UploadManagerCore, task: UploadTaskEntity): SourceOutcome {
+        val staged = task.stagedPath
+        if (staged != null) {
+            return if (File(staged).exists()) SourceOutcome.Proceed(task) else SourceOutcome.Gone
+        }
+        val uri = Uri.parse(task.localUri)
+        return when (SourceChecker.check(applicationContext, uri, task.sourceSizeBytes, task.sourceLastModified)) {
+            SourceChecker.Result.Gone -> SourceOutcome.Gone
+            SourceChecker.Result.Ok -> SourceOutcome.Proceed(task)
+            SourceChecker.Result.Changed -> {
+                val fp = SourceChecker.fingerprint(applicationContext, uri) ?: return SourceOutcome.Gone
+                if (core.config.enableLogging) {
+                    Log.i("UploadManager", "sdk.upload.source_changed ${task.id} -> restart from 0")
+                }
+                core.dao.onSourceChanged(task.id, fp.sizeBytes, fp.lastModified, System.currentTimeMillis())
+                SourceOutcome.Proceed(core.dao.getById(task.id) ?: task)
+            }
+        }
+    }
+
+    private suspend fun terminalFail(core: UploadManagerCore, taskId: String, code: String, now: Long) {
+        core.dao.updateState(taskId, UploadState.FAILED, code, now)
+        core.stager.cleanup(taskId)
+        core.events.emit(UploadEvent.Failed(taskId, code))
     }
 
     private suspend fun transfer(core: UploadManagerCore, task: UploadTaskEntity): Result {
         val dao = core.dao
         val taskId = task.id
         val storageRef = FirebaseStorage.getInstance().reference.child(task.storagePath)
-        val localUri = Uri.parse(task.localUri)
+        // Upload the staged snapshot when present; otherwise the source URI directly.
+        val uploadUri = task.stagedPath?.let { Uri.fromFile(File(it)) } ?: Uri.parse(task.localUri)
         val now = System.currentTimeMillis()
 
         val existing = core.registry.resumable(taskId)
@@ -104,9 +144,9 @@ class FirebaseUploadWorker(
             // In-process paused/stopped task: resume it instead of opening a new session (§6.2).
             existing != null -> existing.also { it.resume() }
             sessionValid -> storageRef.putFile(
-                localUri, buildMetadata(task), Uri.parse(task.uploadSessionUri)
+                uploadUri, buildMetadata(task), Uri.parse(task.uploadSessionUri)
             )
-            else -> storageRef.putFile(localUri, buildMetadata(task))
+            else -> storageRef.putFile(uploadUri, buildMetadata(task))
         }
         core.registry.register(taskId, uploadTask)
         dao.updateState(taskId, UploadState.UPLOADING, null, now)
@@ -144,6 +184,7 @@ class FirebaseUploadWorker(
                     val downloadUrl = snapshot.storage.downloadUrl.await().toString()
                     dao.markCompleted(taskId, downloadUrl, System.currentTimeMillis())
                     core.registry.remove(taskId)
+                    core.stager.cleanup(taskId)
                     core.events.emit(UploadEvent.Completed(taskId, downloadUrl))
                 } finally {
                     uploadTask.removeOnProgressListener(listener)
@@ -192,6 +233,7 @@ class FirebaseUploadWorker(
             FailureAction.PARK -> park(core, task, errorCode)
             FailureAction.TERMINAL -> {
                 core.dao.updateState(task.id, UploadState.FAILED, errorCode, now)
+                core.stager.cleanup(task.id)
                 core.events.emit(UploadEvent.Failed(task.id, errorCode))
                 Result.failure()
             }
@@ -215,6 +257,7 @@ class FirebaseUploadWorker(
             .setCustomMetadata("originalFilename", task.fileName)
             .setCustomMetadata("uploadedBy", task.uid)
             .setCustomMetadata("sdkVersion", SDK_VERSION)
+        task.checksum?.let { builder.setCustomMetadata("checksum", it) }
         task.appMetadata.lineSequence()
             .filter { it.contains('=') }
             .forEach { line ->

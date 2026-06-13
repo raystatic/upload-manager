@@ -8,9 +8,11 @@ WorkManager, and long-horizon retries.
 
 > **Status: Milestone 1 (core pipeline) — pre-release.**
 > Implemented: enqueue → Room queue → WorkManager dispatch → resumable Storage
-> upload → fast/parked retry tiers → pause/resume/cancel → progress observation.
-> Coming next (M2/M3): content-hash deduplication, copy-staging for source
-> durability, opt-in Firestore sync, battery/thermal adaptive concurrency.
+> upload → fast/parked retry tiers → pause/resume/cancel → progress observation,
+> plus source-file staging (snapshot to app-private storage, SHA-256 in the same
+> pass) with fingerprint validation and restart-on-change for non-staged sources.
+> Coming next (M2/M3): content-hash deduplication, opt-in Firestore sync,
+> battery/thermal adaptive concurrency.
 > See [docs/spec-revisions/](docs/spec-revisions/) for the design.
 
 ## Quick start

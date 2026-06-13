@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 
-/** Source-file validation per revision doc 03 §4 (M1: readability + size fingerprint). */
+/** Source-file validation per revision doc 03 §4 (readability + size/mtime fingerprint). */
 object SourceChecker {
 
     data class Fingerprint(val sizeBytes: Long, val lastModified: Long)
@@ -12,6 +12,7 @@ object SourceChecker {
     sealed class Result {
         object Ok : Result()
         object Gone : Result()
+        object Changed : Result()
     }
 
     /** Captured at enqueue. Returns null if the URI is not readable at all. */
@@ -26,11 +27,19 @@ object SourceChecker {
         } ?: openForSize(context, uri)
     }.getOrNull()
 
-    /** Cheap pre-upload check: the URI must still be openable. */
-    fun check(context: Context, uri: Uri): Result = runCatching {
-        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { } ?: return Result.Gone
-        Result.Ok
-    }.getOrDefault(Result.Gone)
+    /**
+     * Pre-upload check for a non-staged (REFERENCE) source: it must still be
+     * readable ([Gone] otherwise) and match the fingerprint captured at enqueue
+     * ([Changed] otherwise). A size or last-modified mismatch means the content
+     * may differ, so a resumed upload must restart rather than splice bytes.
+     */
+    fun check(context: Context, uri: Uri, expectedSize: Long, expectedLastModified: Long): Result {
+        val current = fingerprint(context, uri) ?: return Result.Gone
+        val sizeChanged = expectedSize >= 0 && current.sizeBytes >= 0 && current.sizeBytes != expectedSize
+        val mtimeChanged = expectedLastModified > 0 && current.lastModified > 0 &&
+            current.lastModified != expectedLastModified
+        return if (sizeChanged || mtimeChanged) Result.Changed else Result.Ok
+    }
 
     private fun openForSize(context: Context, uri: Uri): Fingerprint? = runCatching {
         context.contentResolver.openAssetFileDescriptor(uri, "r")?.use {

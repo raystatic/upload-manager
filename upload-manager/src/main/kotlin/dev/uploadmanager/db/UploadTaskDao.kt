@@ -97,4 +97,23 @@ interface UploadTaskDao {
 
     @Query("DELETE FROM upload_tasks WHERE uploadState = 'COMPLETED'")
     suspend fun clearCompleted(): Int
+
+    /**
+     * Source content changed under a REFERENCE task (revision doc 03 §4): record the
+     * new fingerprint and clear any session so the upload restarts from byte 0 with
+     * the current bytes rather than splicing onto a stale offset.
+     */
+    @Query(
+        "UPDATE upload_tasks SET sourceSizeBytes = :size, sourceLastModified = :mod, fileSizeBytes = :size, " +
+            "uploadSessionUri = NULL, sessionCreatedAt = NULL, uploadedBytes = 0, " +
+            "checksum = NULL, updatedAt = :now WHERE id = :id"
+    )
+    suspend fun onSourceChanged(id: String, size: Long, mod: Long, now: Long)
+
+    /** Task ids that may still need their staged file (non-terminal states). */
+    @Query(
+        "SELECT id FROM upload_tasks WHERE uploadState NOT IN " +
+            "('COMPLETED', 'FAILED', 'CANCELLED', 'DEDUP_HIT')"
+    )
+    suspend fun getActiveIds(): List<String>
 }

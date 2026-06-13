@@ -51,6 +51,8 @@ object UploadManager {
         // WorkRequest back (KEEP makes this idempotent).
         scope.launch {
             c.dao.getDispatchable().forEach { c.scheduler.dispatch(it) }
+            // Delete staged files orphaned by a crash between terminal-state and cleanup.
+            c.stager.reconcile(c.dao.getActiveIds().toSet())
         }
     }
 
@@ -70,6 +72,15 @@ object UploadManager {
         } ?: throw IllegalArgumentException("Source URI is not readable: ${request.localUri}")
 
         val id = UUID.randomUUID().toString()
+
+        // Staging (revision doc 03): snapshot the source into app-private storage so
+        // the upload reads immutable bytes. Falls back to REFERENCE if over budget.
+        val staged = if (c.config.staging.shouldStage(fingerprint.sizeBytes)) {
+            withContext(Dispatchers.IO) { c.stager.stage(id, request.localUri) }
+        } else {
+            null
+        }
+
         val now = System.currentTimeMillis()
         val task = UploadTaskEntity(
             id = id,
@@ -79,10 +90,12 @@ object UploadManager {
             storagePath = "users/$uid/files/$id",
             fileName = request.fileName,
             mimeType = request.mimeType,
-            fileSizeBytes = fingerprint.sizeBytes,
+            fileSizeBytes = staged?.sizeBytes ?: fingerprint.sizeBytes,
             uploadState = UploadState.PENDING,
             priority = request.priority.value,
             appMetadata = request.metadata.entries.joinToString("\n") { "${it.key}=${it.value}" },
+            checksum = staged?.checksum,
+            stagedPath = staged?.path,
             sourceSizeBytes = fingerprint.sizeBytes,
             sourceLastModified = fingerprint.lastModified,
             persistablePermission = persistable,
@@ -137,6 +150,7 @@ object UploadManager {
             if (task != null && !task.uploadState.isTerminal) {
                 c.dao.updateState(taskId, UploadState.CANCELLED, null, System.currentTimeMillis())
                 c.dao.clearSession(taskId, System.currentTimeMillis())
+                c.stager.cleanup(taskId)
                 c.events.emit(UploadEvent.Cancelled(taskId))
             }
         }

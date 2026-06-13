@@ -6,6 +6,7 @@ import dev.uploadmanager.api.UploadManagerConfig
 import dev.uploadmanager.db.UploadDatabase
 import dev.uploadmanager.db.UploadTaskDao
 import dev.uploadmanager.events.UploadEvents
+import dev.uploadmanager.internal.FileStager
 import dev.uploadmanager.scheduler.UploadScheduler
 import dev.uploadmanager.worker.ActiveTaskRegistry
 import kotlinx.coroutines.sync.Semaphore
@@ -24,6 +25,7 @@ class UploadManagerCore(
     val events: UploadEvents = UploadEvents(config.enableLogging)
     val registry: ActiveTaskRegistry = ActiveTaskRegistry()
     val scheduler: UploadScheduler = UploadScheduler(WorkManager.getInstance(appContext), config)
+    val stager: FileStager = FileStager(appContext, config.staging.stagingDirMaxBytes)
 
     /**
      * In-process concurrency cap (spec §10.2, M1 static form). Workers acquire a

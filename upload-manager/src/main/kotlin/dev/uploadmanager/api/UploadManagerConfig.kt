@@ -20,6 +20,8 @@ data class UploadManagerConfig(
     val progressIntervalBytes: Long = 512 * 1024L,
     /** Escalate to a foreground service for files larger than this. */
     val foregroundThresholdBytes: Long = 50L * 1024 * 1024,
+    /** Source-file staging policy (revision doc 03). */
+    val staging: StagingConfig = StagingConfig(),
     val enableLogging: Boolean = false,
 ) {
     init {
