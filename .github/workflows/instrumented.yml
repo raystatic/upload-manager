@@ -10,7 +10,9 @@ on:
 
 jobs:
   androidTest:
-    runs-on: ubuntu-latest
+    # ubuntu-22.04, not ubuntu-latest (24.04): the newer image breaks
+    # android-emulator-runner's emulator/adb boot on hosted runners.
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
