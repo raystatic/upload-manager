@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose renders its own Material 3 surfaces, so the activity theme only
+         needs to be a no-action-bar platform theme (no AppCompat/Material dep). -->
+    <style name="Theme.UploadManagerSample" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

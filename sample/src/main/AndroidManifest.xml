@@ -8,7 +8,7 @@
         android:name=".SampleApp"
         android:label="Upload Manager Sample"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+        android:theme="@style/Theme.UploadManagerSample">
 
         <activity
             android:name=".MainActivity"
