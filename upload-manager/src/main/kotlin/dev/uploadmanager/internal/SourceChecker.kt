@@ -35,6 +35,11 @@ object SourceChecker {
      */
     fun check(context: Context, uri: Uri, expectedSize: Long, expectedLastModified: Long): Result {
         val current = fingerprint(context, uri) ?: return Result.Gone
+        return compare(expectedSize, expectedLastModified, current)
+    }
+
+    /** Pure fingerprint comparison (testable without IO). */
+    internal fun compare(expectedSize: Long, expectedLastModified: Long, current: Fingerprint): Result {
         val sizeChanged = expectedSize >= 0 && current.sizeBytes >= 0 && current.sizeBytes != expectedSize
         val mtimeChanged = expectedLastModified > 0 && current.lastModified > 0 &&
             current.lastModified != expectedLastModified
