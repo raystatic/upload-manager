@@ -47,10 +47,9 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            cd firebase
-            firebase emulators:exec --only auth,storage --project demo-upload-manager \
-              "cd \"$GITHUB_WORKSPACE\" && ./gradlew :upload-manager:connectedDebugAndroidTest --stacktrace"
+          # Single line: android-emulator-runner executes the script line-by-line,
+          # so `cd` and `\` continuations don't persist across lines.
+          script: cd firebase && firebase emulators:exec --only auth,storage --project demo-upload-manager "cd $GITHUB_WORKSPACE && ./gradlew :upload-manager:connectedDebugAndroidTest --stacktrace"
 
       - name: Upload androidTest report
         if: always()
