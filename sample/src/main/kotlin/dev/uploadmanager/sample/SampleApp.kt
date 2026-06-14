@@ -7,8 +7,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import dev.uploadmanager.UploadManager
-import dev.uploadmanager.api.NetworkPreference
-import dev.uploadmanager.api.UploadManagerConfig
 
 /**
  * Runs against the Firebase Emulator Suite by default (no google-services.json
@@ -34,13 +32,8 @@ class SampleApp : Application() {
         FirebaseFirestore.getInstance().useEmulator(EMULATOR_HOST, 8080)
         FirebaseStorage.getInstance().useEmulator(EMULATOR_HOST, 9199)
 
-        UploadManager.initialise(
-            this,
-            UploadManagerConfig(
-                networkPreference = NetworkPreference.ALLOW_CELLULAR,
-                enableLogging = true,
-            ),
-        )
+        // The active CUJ preset (chosen in-app, persisted across the restart).
+        UploadManager.initialise(this, Preset.current(this).toConfig())
     }
 
     companion object {
