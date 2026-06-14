@@ -5,7 +5,9 @@ name: Instrumented Tests
 # fast unit-test CI so the slow emulator job doesn't gate every push's feedback.
 on:
   push:
-    branches: [ "claude/nifty-bohr-kmng1s" ]
+    branches: [ "main", "claude/nifty-bohr-kmng1s" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:

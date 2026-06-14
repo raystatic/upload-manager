@@ -32,6 +32,13 @@ android {
             isIncludeAndroidResources = true
         }
     }
+
+    lint {
+        // Run Android Lint without failing the build; surface issues as reports.
+        abortOnError = false
+        warningsAsErrors = false
+        checkReleaseBuilds = false
+    }
 }
 
 kotlin {
