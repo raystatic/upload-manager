@@ -46,7 +46,12 @@ abstract class EmulatorTestBase {
             FirebaseFirestore.getInstance().useEmulator(EMULATOR_HOST, 8080)
             FirebaseStorage.getInstance().useEmulator(EMULATOR_HOST, 9199)
         }
-        UploadManager.initialise(context, UploadManagerConfig(enableLogging = true))
+        // adaptiveConcurrency off so tests don't depend on the emulator's reported
+        // battery/thermal state (that path is covered by ConcurrencyPolicy/Governor unit tests).
+        UploadManager.initialise(
+            context,
+            UploadManagerConfig(enableLogging = true, adaptiveConcurrency = false),
+        )
     }
 
     protected suspend fun signIn() {

@@ -54,3 +54,14 @@ FirebaseUploadWorker.doWork
 See [spec-revisions/](spec-revisions/) for the rationale behind dedup, retry,
 staging, and sync, and [VERIFYING.md](VERIFYING.md) / the `*-TEST-PLAN.md` files
 for how to exercise each.
+
+## Deliberate non-goals
+
+- **30-second upload batching (spec §10.1)** is intentionally not implemented.
+  It conflicts with the P0 "begin within 2 s" latency target, and WorkManager
+  already coalesces wakeups at the OS level; the adaptive-concurrency governor
+  delivers the battery benefit without delaying dispatch.
+- **Global (cross-user) dedup** stays per-uid (revision doc 01). A cross-user
+  index would leak file existence and download URLs across accounts and needs a
+  Cloud Functions companion; it is left as opt-in future work.
+- **App Check** installation is the host app's Firebase concern, not the SDK's.

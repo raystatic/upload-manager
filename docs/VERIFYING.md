@@ -109,6 +109,19 @@ without you touching it.
 and shows `PAUSED`; Resume continues from the same offset; Cancel moves it to
 `CANCELLED` and stops the transfer. **Clear completed** removes finished rows.
 
+**E. Adaptive concurrency (M3, spec §10).** With several uploads queued:
+
+```bash
+adb shell dumpsys battery set level 15 && adb shell dumpsys battery unplug  # low, not charging
+```
+
+Fewer transfers run at once, and an upload larger than `largeUploadThresholdBytes`
+(default 50 MB) moves to `PARKED` with `errorCode = DEVICE_BUSY`. Restore with
+`adb shell dumpsys battery set ac 1` (charging) → concurrency widens and the
+large upload resumes; `adb shell dumpsys battery reset` afterward. Thermal
+pausing (MODERATE+ → all transfers pause) needs a physical device under load —
+the pure decision logic is covered by `ConcurrencyPolicyTest`.
+
 ## Quick "is it actually durable?" inspection
 
 While an upload is in flight or paused, dump the on-device queue to confirm the
