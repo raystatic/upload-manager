@@ -23,7 +23,7 @@ jobs:
       # 21 and auto-detects the runner's preinstalled JDK 17 for the build toolchain
       # (same as the main CI).
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
