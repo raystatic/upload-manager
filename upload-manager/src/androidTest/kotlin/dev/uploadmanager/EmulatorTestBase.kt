@@ -90,6 +90,22 @@ abstract class EmulatorTestBase {
             @Suppress("UNREACHABLE_CODE") error("unreachable")
         }
 
+    protected suspend fun awaitAnyState(
+        taskId: String,
+        targets: Set<UploadState>,
+        timeoutMs: Long,
+    ): UploadTaskState = withTimeout(timeoutMs) {
+        while (true) {
+            val status = UploadManager.getStatus(taskId) ?: error("task $taskId not found")
+            if (status.state in targets) return@withTimeout status
+            check(status.state != UploadState.FAILED || UploadState.FAILED in targets) {
+                "unexpected FAILED for $taskId: ${status.errorCode}"
+            }
+            delay(200)
+        }
+        @Suppress("UNREACHABLE_CODE") error("unreachable")
+    }
+
     /** Wait until the upload is actively transferring (so a control op lands mid-flight). */
     protected suspend fun awaitUploading(taskId: String, timeoutMs: Long = 60_000) {
         withTimeout(timeoutMs) {
