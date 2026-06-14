@@ -215,9 +215,12 @@ generate their own test files (small, large, duplicate, enqueue-then-delete), a
 live **event log**, and the task list with pause/resume/cancel/retry.
 
 **Every CUJ, how to run it, and its pass criteria are in one place:
-[docs/CUJS.md](docs/CUJS.md).** The automated subset runs on an emulator in CI on
-every push; the headline manual ones (resume-after-death, park→recovery,
-source-gone/restart, battery throttling, reboot) are tap-or-adb from the sample.
+[docs/CUJS.md](docs/CUJS.md).** New to the codebase? Start with
+[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) — it explains *why* each use case works
+(in plain language, ready to re-explain to a teammate). The automated subset runs
+on an emulator in CI on every push; the headline manual ones
+(resume-after-death, park→recovery, source-gone/restart, battery throttling,
+reboot) are tap-or-adb from the sample.
 
 ```bash
 ./gradlew :upload-manager:test                       # unit tests (no device)
