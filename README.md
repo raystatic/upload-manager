@@ -81,16 +81,41 @@ answers once, behind a clean API, with the design rationale written down in
 
 ## Production integration — step by step
 
-### 1. Set up your Firebase project
+This is the **real-app path**: your own Firebase project, real users, real
+uploads — *not* the emulator the sample uses for local testing. The SDK never
+touches Firebase initialisation; your app owns that (exactly as below), and the
+SDK uses whatever `FirebaseApp` you've set up.
 
-Create a Firebase project, add your Android app, and drop `google-services.json`
-into your app module. Enable **Authentication** (any provider) and **Cloud
-Storage**; enable **Firestore** too if you'll use dedup (on by default) or
-`SyncPolicy`. Apply the Google Services plugin per the Firebase docs.
+### Step 1 — Create a Firebase project and add your app
 
-### 2. Add the dependency
+1. In the [Firebase console](https://console.firebase.google.com), create a
+   project and **add an Android app** with your real `applicationId`.
+2. Download the generated **`google-services.json`** and put it in your **app
+   module** (`app/google-services.json`).
+3. Enable **Authentication** (any sign-in method) and **Cloud Storage**. Enable
+   **Cloud Firestore** too if you'll use deduplication (on by default) or
+   `SyncPolicy`.
 
-Until it's on Maven Central, publish locally (or to your internal repo):
+### Step 2 — Apply the Google Services Gradle plugin
+
+```kotlin
+// settings/root build.gradle.kts (plugins block)
+plugins { id("com.google.gms.google-services") version "4.4.2" apply false }
+
+// app/build.gradle.kts (top of plugins block)
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")   // reads google-services.json
+}
+```
+
+This is what wires `google-services.json` into your build so Firebase
+auto-initialises from it — no hard-coded keys in code.
+
+### Step 3 — Add the dependencies
+
+Until it's on Maven Central, publish the SDK to your local/internal repo:
 
 ```bash
 ./gradlew :upload-manager:publishToMavenLocal
@@ -101,48 +126,67 @@ Until it's on Maven Central, publish locally (or to your internal repo):
 dependencies {
     implementation("dev.uploadmanager:upload-manager:0.1.0")
     implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
-    // Firebase Storage + Auth are required; Firestore only if you use dedup/sync.
+    implementation("com.google.firebase:firebase-auth")     // required
+    implementation("com.google.firebase:firebase-storage")  // required
+    implementation("com.google.firebase:firebase-firestore") // only if dedup/sync
 }
 ```
 
-Consumer R8/ProGuard rules ship with the library — nothing to add.
+Consumer R8/ProGuard rules ship with the library — nothing to add for release
+builds.
 
-### 3. Deploy the security rules (the only backend setup)
+### Step 4 — Deploy the security rules (the only backend setup)
 
 Copy [`firebase/storage.rules`](firebase/storage.rules) (and
-[`firebase/firestore.rules`](firebase/firestore.rules) if using dedup/sync) and:
+[`firebase/firestore.rules`](firebase/firestore.rules) if using dedup/sync) into
+your project and deploy:
 
 ```bash
 firebase deploy --only storage
 firebase deploy --only firestore:rules   # if dedup or SyncPolicy != NONE
 ```
 
-These scope every object and index entry to `users/{uid}/` and reject any
-cross-user access.
+These scope every object and index entry to `users/{uid}/` and reject all
+cross-user access. **Do not skip this** — uploads to an unprotected bucket are a
+security hole.
 
-### 4. Initialise once
+### Step 5 — Initialise Firebase and sign the user in (your app's job)
+
+In production you do **not** call `useEmulator` and you do **not** build fake
+`FirebaseOptions`. The google-services plugin handles config; you just sign in a
+real user before uploading:
 
 ```kotlin
 // Application.onCreate()
+FirebaseApp.initializeApp(this)            // reads google-services.json
+// Recommended: install App Check (Play Integrity) to reject non-genuine builds
+// FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+//     PlayIntegrityAppCheckProviderFactory.getInstance())
+
+// Somewhere before enqueuing — enqueue() REQUIRES a signed-in user:
+FirebaseAuth.getInstance().signInWithEmailAndPassword(/* … */)  // or your provider
+```
+
+### Step 6 — Initialise the SDK once
+
+```kotlin
+// Application.onCreate(), after Firebase is set up
 UploadManager.initialise(
     context = this,
     config = UploadManagerConfig(
         networkPreference = NetworkPreference.ALLOW_CELLULAR, // >10 MB still waits for WiFi
         maxConcurrentUploads = 3,
-        // dedup / syncPolicy / staging / adaptiveConcurrency have sensible defaults
+        // staging / dedup / syncPolicy / adaptiveConcurrency have production-ready defaults
     ),
 )
 ```
 
-The host app owns Firebase init and sign-in; `enqueue` requires a signed-in
-`FirebaseAuth` user.
-
-### 5. Enqueue
+### Step 7 — Enqueue
 
 ```kotlin
 val taskId = UploadManager.enqueue(
     UploadRequest(
-        localUri = uri,                  // prefer ACTION_OPEN_DOCUMENT URIs
+        localUri = uri,                  // prefer ACTION_OPEN_DOCUMENT URIs (persistable grants)
         mimeType = "image/jpeg",
         fileName = "photo.jpg",
         priority = UploadPriority.P0,    // P0 (now) … P4 (backfill)
@@ -151,7 +195,7 @@ val taskId = UploadManager.enqueue(
 )
 ```
 
-### 6. Observe and control
+### Step 8 — Observe and control
 
 ```kotlin
 UploadManager.observeAll().collect { tasks -> render(tasks) }      // List<UploadTaskState>
@@ -169,16 +213,33 @@ UploadManager.pause(taskId); UploadManager.resume(taskId)
 UploadManager.cancel(taskId); UploadManager.retry(taskId)
 ```
 
-### 7. (Optional) metrics & App Check
+### Step 9 — Production checklist
 
-Plug an [`UploadMetrics`](upload-manager/src/main/kotlin/dev/uploadmanager/api/UploadMetrics.kt)
-into the config to feed your analytics, and install Firebase App Check (Play
-Integrity) in `Application.onCreate()` if you want to reject non-genuine builds.
+- [ ] `google-services.json` in the app module; google-services plugin applied.
+- [ ] Storage (and Firestore, if used) **rules deployed**.
+- [ ] A user is **signed in before** the first `enqueue`.
+- [ ] **`POST_NOTIFICATIONS`** runtime permission requested on Android 13+ if you
+      want the foreground-upload notification visible (uploads still run without
+      it). The SDK already declares `INTERNET`, `FOREGROUND_SERVICE`, and
+      `FOREGROUND_SERVICE_DATA_SYNC` for you via manifest merge.
+- [ ] (Recommended) **App Check** installed.
+- [ ] (Optional) an [`UploadMetrics`](upload-manager/src/main/kotlin/dev/uploadmanager/api/UploadMetrics.kt)
+      sink wired into the config for analytics.
 
-> **Screenshots:** the sample app's UI (preset bar, CUJ buttons, live task list
-> and event log) is the quickest way to see the API in action — run it per
-> [the sample section](#the-sample-app--verifying-locally). Captured screenshots
-> can live under `docs/images/`.
+### Demo vs production — and how the sample switches
+
+The [sample app](#the-sample-app--verifying-locally) ships in **demo mode** (no
+`google-services.json`) so it talks to the local Firebase Emulator Suite. To run
+the *same* sample against a **real** Firebase project, just drop your
+`google-services.json` into the `sample/` module and rebuild — the build detects
+it, applies the google-services plugin, and
+[`SampleApp`](sample/src/main/kotlin/dev/uploadmanager/sample/SampleApp.kt)
+initialises real Firebase instead of the emulator (see its `BuildConfig.USE_EMULATOR`
+branch). That file is the canonical example of the demo-vs-production split.
+
+> **Screenshots:** the sample's UI (preset bar, CUJ buttons, live task list, event
+> log) is the fastest way to see the API in action; captured images can live under
+> `docs/images/`.
 
 ## Configuration reference
 

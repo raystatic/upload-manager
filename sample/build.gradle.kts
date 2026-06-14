@@ -4,6 +4,15 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+// Drop a real google-services.json into this module to build against a real
+// Firebase project (production mode); without it the sample uses the Firebase
+// Emulator Suite (demo mode). The plugin requires the file, so apply it only
+// when present.
+val hasGoogleServices = file("google-services.json").exists()
+if (hasGoogleServices) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "dev.uploadmanager.sample"
     compileSdk = 35
@@ -14,10 +23,13 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        // false = real Firebase (google-services.json present); true = emulator.
+        buildConfigField("boolean", "USE_EMULATOR", (!hasGoogleServices).toString())
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
