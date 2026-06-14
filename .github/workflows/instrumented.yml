@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # JDK 21: firebase-tools requires Java 21+ for its emulators. Gradle runs on
       # 21 and auto-detects the runner's preinstalled JDK 17 for the build toolchain
