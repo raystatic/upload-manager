@@ -47,6 +47,7 @@ object UploadManager {
         }
         val c = requireCore()
         c.scheduler.ensureSweepScheduled()
+        c.conditionsMonitor?.start()
         // Reconcile after process death/reboot: every dispatchable task gets its
         // WorkRequest back (KEEP makes this idempotent).
         scope.launch {

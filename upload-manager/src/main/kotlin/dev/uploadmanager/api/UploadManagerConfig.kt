@@ -26,6 +26,12 @@ data class UploadManagerConfig(
     val dedup: DedupConfig = DedupConfig(),
     /** Firestore mirroring policy (revision doc 04). Default off. */
     val syncPolicy: SyncPolicy = SyncPolicy.NONE,
+    /** Adapt concurrency to battery/thermal/network and pause in the heat (spec §10). */
+    val adaptiveConcurrency: Boolean = true,
+    /** Above this size, an upload is treated as "large" and held off cellular / low battery / heat. */
+    val largeUploadThresholdBytes: Long = 50L * 1024 * 1024,
+    /** Optional metrics sink (spec §13.2). */
+    val metrics: UploadMetrics? = null,
     val enableLogging: Boolean = false,
 ) {
     init {

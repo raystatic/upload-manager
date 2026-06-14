@@ -23,6 +23,7 @@ import dev.uploadmanager.api.UploadState
 import dev.uploadmanager.core.UploadManagerCore
 import dev.uploadmanager.db.UploadTaskEntity
 import dev.uploadmanager.dedup.DeduplicationEngine
+import dev.uploadmanager.internal.ConcurrencyPolicy
 import dev.uploadmanager.internal.SourceChecker
 import dev.uploadmanager.retry.FailureAction
 import dev.uploadmanager.retry.RetryClassifier
@@ -30,7 +31,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.tasks.await
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -89,12 +89,21 @@ class FirebaseUploadWorker(
             }
         }
 
+        // Adaptive throttling (spec §10): hold large uploads off cellular / low battery / heat.
+        core.conditionsMonitor?.let { monitor ->
+            val allowed = ConcurrencyPolicy.allowsLargeUpload(
+                monitor.conditions(), current.fileSizeBytes, core.config.largeUploadThresholdBytes,
+            )
+            if (!allowed) return park(core, current, ERROR_DEVICE_BUSY)
+        }
+
         if (current.fileSizeBytes >= core.config.foregroundThresholdBytes) {
             // Best-effort: background-start restrictions (Android 12+) can reject this.
             runCatching { setForeground(getForegroundInfo()) }
         }
 
-        return core.uploadPermits.withPermit { transfer(core, current) }
+        // Resizable concurrency gate (spec §10.2): suspends while over the current limit.
+        return core.governor.withSlot { transfer(core, current) }
     }
 
     private suspend fun dedupHit(core: UploadManagerCore, task: UploadTaskEntity, existingPath: String): Result {
@@ -110,6 +119,7 @@ class FirebaseUploadWorker(
         )
         core.firestoreSync.onCompleted(mirrored, downloadUrl)
         core.firestoreSync.onTaskProjection(mirrored)
+        core.config.metrics?.onDedupHit(task.id)
         core.events.emit(UploadEvent.DedupHit(task.id, downloadUrl ?: ""))
         return Result.success()
     }
@@ -159,6 +169,7 @@ class FirebaseUploadWorker(
     private suspend fun terminalFail(core: UploadManagerCore, taskId: String, code: String, now: Long) {
         core.dao.updateState(taskId, UploadState.FAILED, code, now)
         core.stager.cleanup(taskId)
+        core.config.metrics?.onFailed(taskId, code)
         core.events.emit(UploadEvent.Failed(taskId, code))
     }
 
@@ -227,6 +238,9 @@ class FirebaseUploadWorker(
                     core.registry.remove(taskId)
                     core.stager.cleanup(taskId)
                     recordSuccess(core, task, downloadUrl)
+                    core.config.metrics?.onCompleted(
+                        taskId, System.currentTimeMillis() - task.createdAt, task.fileSizeBytes,
+                    )
                     core.events.emit(UploadEvent.Completed(taskId, downloadUrl))
                 } finally {
                     uploadTask.removeOnProgressListener(listener)
@@ -263,12 +277,14 @@ class FirebaseUploadWorker(
             FailureAction.RETRY_FAST -> {
                 core.dao.updateState(task.id, UploadState.RETRYING, errorCode, now)
                 core.dao.updateRetryCount(task.id, attemptsInTier, now)
+                core.config.metrics?.onRetry(task.id, attemptsInTier, errorCode)
                 core.events.emit(UploadEvent.Retrying(task.id, attemptsInTier, errorCode))
                 Result.retry()
             }
             FailureAction.REFRESH_AUTH -> {
                 runCatching { FirebaseAuth.getInstance().currentUser?.getIdToken(true)?.await() }
                 core.dao.updateState(task.id, UploadState.RETRYING, errorCode, now)
+                core.config.metrics?.onRetry(task.id, attemptsInTier, errorCode)
                 core.events.emit(UploadEvent.Retrying(task.id, attemptsInTier, errorCode))
                 Result.retry()
             }
@@ -276,6 +292,7 @@ class FirebaseUploadWorker(
             FailureAction.TERMINAL -> {
                 core.dao.updateState(task.id, UploadState.FAILED, errorCode, now)
                 core.stager.cleanup(task.id)
+                core.config.metrics?.onFailed(task.id, errorCode)
                 core.events.emit(UploadEvent.Failed(task.id, errorCode))
                 Result.failure()
             }
@@ -288,6 +305,7 @@ class FirebaseUploadWorker(
         val delay = policy.parkDelayMs(task.parkCount)
         core.dao.park(task.id, task.parkCount + 1, now + delay, errorCode, now)
         core.scheduler.scheduleParkKick(delay)
+        core.config.metrics?.onParked(task.id)
         core.events.emit(UploadEvent.Parked(task.id, now + delay))
         // This WorkRequest ends here; the sweep issues a fresh one (fast tier resets).
         return Result.failure()
@@ -344,6 +362,7 @@ class FirebaseUploadWorker(
         const val ERROR_SOURCE_GONE = "SOURCE_GONE"
         const val ERROR_TTL_EXCEEDED = "TTL_EXCEEDED"
         const val ERROR_AUTH_UNAVAILABLE = "AUTH_UNAVAILABLE"
+        const val ERROR_DEVICE_BUSY = "DEVICE_BUSY"
 
         /** Stay safely under GCS's ~7-day resumable-session lifetime (revision doc 02 §4). */
         val SESSION_MAX_AGE_MS: Long = TimeUnit.DAYS.toMillis(6)

@@ -26,4 +26,14 @@ class ActiveTaskRegistry {
      */
     fun resumable(taskId: String): UploadTask? =
         tasks[taskId]?.takeIf { !it.isComplete }
+
+    /** Pause every in-flight transfer (thermal throttling, spec §10.3). */
+    fun pauseAll() {
+        tasks.values.forEach { runCatching { if (!it.isComplete) it.pause() } }
+    }
+
+    /** Resume in-flight transfers paused by the system. */
+    fun resumeAll() {
+        tasks.values.forEach { runCatching { if (!it.isComplete && it.isPaused) it.resume() } }
+    }
 }

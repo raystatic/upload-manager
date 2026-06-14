@@ -8,6 +8,8 @@ import dev.uploadmanager.db.UploadDatabase
 import dev.uploadmanager.db.UploadTaskDao
 import dev.uploadmanager.dedup.DeduplicationEngine
 import dev.uploadmanager.events.UploadEvents
+import dev.uploadmanager.internal.ConcurrencyGovernor
+import dev.uploadmanager.internal.DeviceConditionsMonitor
 import dev.uploadmanager.internal.FileStager
 import dev.uploadmanager.scheduler.UploadScheduler
 import dev.uploadmanager.sync.FirestoreSync
@@ -15,7 +17,7 @@ import dev.uploadmanager.worker.ActiveTaskRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.launch
 
 /**
  * Process-scoped wiring for all SDK components. Created by UploadManager.initialise();
@@ -45,8 +47,27 @@ class UploadManagerCore(
     val firestoreSync: FirestoreSync = FirestoreSync(firestore, config.syncPolicy, ioScope)
 
     /**
-     * In-process concurrency cap (spec §10.2, M1 static form). Workers acquire a
-     * permit before transferring; WorkManager-level parallelism stays untouched.
+     * Resizable in-process concurrency gate (spec §10.2). Workers transfer inside
+     * [ConcurrencyGovernor.withSlot]; [conditionsMonitor] resizes it from device state.
      */
-    val uploadPermits: Semaphore = Semaphore(config.maxConcurrentUploads)
+    val governor: ConcurrencyGovernor = ConcurrencyGovernor(config.maxConcurrentUploads)
+
+    /** Null when adaptive concurrency is disabled (governor then stays at the static max). */
+    val conditionsMonitor: DeviceConditionsMonitor? =
+        if (config.adaptiveConcurrency) {
+            DeviceConditionsMonitor(
+                context = appContext,
+                configMax = config.maxConcurrentUploads,
+                largeThresholdBytes = config.largeUploadThresholdBytes,
+                governor = governor,
+                scope = ioScope,
+                onThermalPause = { registry.pauseAll() },
+                onThermalResume = {
+                    registry.resumeAll()
+                    ioScope.launch { dao.getDispatchable().forEach { scheduler.dispatch(it) } }
+                },
+            )
+        } else {
+            null
+        }
 }
