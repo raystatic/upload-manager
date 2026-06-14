@@ -1,0 +1,10 @@
+Upload Manager SDK
+Copyright 2026 Upload Manager SDK contributors
+
+This product includes software developed as an open-source project.
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This software depends on, but does not redistribute, the following at build time:
+  - AndroidX (Room, WorkManager, Core) — Apache License 2.0
+  - Firebase Android SDK (Storage, Auth, Firestore) — Apache License 2.0
+  - Kotlin and kotlinx.coroutines — Apache License 2.0

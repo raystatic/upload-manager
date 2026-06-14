@@ -49,11 +49,23 @@ publishing {
             pom {
                 name.set("Upload Manager SDK")
                 description.set("Reliable, resumable, battery-aware Firebase upload manager for Android.")
+                url.set("https://github.com/raystatic/upload-manager")
                 licenses {
                     license {
                         name.set("The Apache License, Version 2.0")
                         url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
                     }
+                }
+                developers {
+                    developer {
+                        id.set("raystatic")
+                        name.set("Upload Manager SDK contributors")
+                    }
+                }
+                scm {
+                    url.set("https://github.com/raystatic/upload-manager")
+                    connection.set("scm:git:https://github.com/raystatic/upload-manager.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/raystatic/upload-manager.git")
                 }
             }
         }

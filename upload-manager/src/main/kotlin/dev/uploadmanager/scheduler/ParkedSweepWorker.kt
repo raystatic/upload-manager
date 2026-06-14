@@ -11,7 +11,7 @@ import dev.uploadmanager.api.UploadState
  * parkedUntil has elapsed, fails tasks past their TTL, and re-dispatches any
  * dispatchable task that lost its WorkRequest (e.g. cleared app data edge cases).
  */
-class ParkedSweepWorker(
+internal class ParkedSweepWorker(
     appContext: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {

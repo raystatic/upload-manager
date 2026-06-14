@@ -16,7 +16,7 @@ import kotlinx.coroutines.tasks.await
  *
  * [firestore] is null when dedup is disabled, which short-circuits everything.
  */
-class DeduplicationEngine(
+internal class DeduplicationEngine(
     private val firestore: FirebaseFirestore?,
     private val scope: CoroutineScope,
 ) {

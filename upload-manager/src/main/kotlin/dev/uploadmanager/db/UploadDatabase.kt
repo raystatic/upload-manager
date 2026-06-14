@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(entities = [UploadTaskEntity::class], version = 1, exportSchema = false)
-abstract class UploadDatabase : RoomDatabase() {
+internal abstract class UploadDatabase : RoomDatabase() {
 
     abstract fun uploadTaskDao(): UploadTaskDao
 

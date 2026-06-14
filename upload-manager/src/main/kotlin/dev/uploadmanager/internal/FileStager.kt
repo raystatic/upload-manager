@@ -11,7 +11,7 @@ import java.security.MessageDigest
  * snapshot rather than a volatile content URI (revision doc 03 §2). The SHA-256
  * checksum is computed in the same pass, so staging makes hashing effectively free.
  */
-class FileStager(
+internal class FileStager(
     appContext: Context,
     private val maxDirBytes: Long,
 ) {

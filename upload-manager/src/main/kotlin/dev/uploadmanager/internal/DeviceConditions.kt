@@ -1,10 +1,10 @@
 package dev.uploadmanager.internal
 
 /** Thermal severity, ordered so `>=` comparisons work (revision spec §10.3). */
-enum class ThermalLevel { NONE, LIGHT, MODERATE, SEVERE, CRITICAL }
+internal enum class ThermalLevel { NONE, LIGHT, MODERATE, SEVERE, CRITICAL }
 
 /** A snapshot of the device state that governs upload concurrency (spec §10.2). */
-data class DeviceConditions(
+internal data class DeviceConditions(
     val batteryPct: Int,
     val charging: Boolean,
     val thermal: ThermalLevel,
@@ -16,7 +16,7 @@ data class DeviceConditions(
  * Kept side-effect free so it is fully unit-testable; the framework listeners
  * live in [DeviceConditionsMonitor].
  */
-object ConcurrencyPolicy {
+internal object ConcurrencyPolicy {
 
     /** Total concurrent transfers allowed under [conditions], capped at [configMax]. */
     fun maxConcurrent(conditions: DeviceConditions, configMax: Int): Int {

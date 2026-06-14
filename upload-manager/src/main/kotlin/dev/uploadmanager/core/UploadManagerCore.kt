@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
  * workers reach it through UploadManager.coreOrNull() since WorkManager constructs
  * them reflectively.
  */
-class UploadManagerCore(
+internal class UploadManagerCore(
     context: Context,
     val config: UploadManagerConfig,
 ) {

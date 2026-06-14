@@ -7,7 +7,7 @@ import dev.uploadmanager.api.UploadState
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface UploadTaskDao {
+internal interface UploadTaskDao {
 
     @Upsert
     suspend fun upsert(task: UploadTaskEntity)

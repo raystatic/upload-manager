@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.filter
 
 /** In-process event bus backing UploadManager.observe() (spec §11.3, §13.1). */
-class UploadEvents(private val logging: Boolean) {
+internal class UploadEvents(private val logging: Boolean) {
 
     private val flow = MutableSharedFlow<UploadEvent>(
         extraBufferCapacity = 256,

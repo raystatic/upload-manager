@@ -8,7 +8,7 @@ import java.util.concurrent.CancellationException
  * Pure error classifier per revision doc 02 §2. WorkManager owns all retry timing;
  * this only decides what kind of failure occurred.
  */
-enum class FailureAction {
+internal enum class FailureAction {
     /** Transient: return Result.retry(); WorkManager applies exponential backoff. */
     RETRY_FAST,
 
@@ -22,7 +22,7 @@ enum class FailureAction {
     TERMINAL,
 }
 
-object RetryClassifier {
+internal object RetryClassifier {
 
     /**
      * @param attemptsInTier WorkManager runAttemptCount for the current WorkRequest

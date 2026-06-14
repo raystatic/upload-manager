@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit
  * persistence and throttled progress writes → classification of any failure
  * (revision doc 02). WorkManager owns all retry timing.
  */
-class FirebaseUploadWorker(
+internal class FirebaseUploadWorker(
     appContext: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {

@@ -5,7 +5,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 
 /** Source-file validation per revision doc 03 §4 (readability + size/mtime fingerprint). */
-object SourceChecker {
+internal object SourceChecker {
 
     data class Fingerprint(val sizeBytes: Long, val lastModified: Long)
 

@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Survives worker restarts while the process is alive; pause/resume route here.
  * After process death, resumption goes through the persisted session URI instead.
  */
-class ActiveTaskRegistry {
+internal class ActiveTaskRegistry {
 
     private val tasks = ConcurrentHashMap<String, UploadTask>()
 

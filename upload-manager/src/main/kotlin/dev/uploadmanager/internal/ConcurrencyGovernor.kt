@@ -10,7 +10,7 @@ import kotlinx.coroutines.CancellationException
  * narrow how many may run at once. Lowering the limit never preempts in-flight
  * work — it just makes the next acquirers wait until active drops below the limit.
  */
-class ConcurrencyGovernor(initialLimit: Int) {
+internal class ConcurrencyGovernor(initialLimit: Int) {
 
     private val lock = Any()
     private var limit = initialLimit.coerceAtLeast(0)

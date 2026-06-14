@@ -20,7 +20,7 @@ import java.util.concurrent.Executors
  * (spec §10.2/§10.3). Thermal MODERATE+ pauses all transfers; recovery resumes
  * them. Updates are debounced so a value flapping on a boundary doesn't thrash.
  */
-class DeviceConditionsMonitor(
+internal class DeviceConditionsMonitor(
     context: Context,
     private val configMax: Int,
     private val largeThresholdBytes: Long,

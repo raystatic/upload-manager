@@ -9,7 +9,7 @@ import dev.uploadmanager.api.UploadState
  * docs 02 and 03 included from day one to avoid pre-1.0 schema migrations).
  */
 @Entity(tableName = "upload_tasks")
-data class UploadTaskEntity(
+internal data class UploadTaskEntity(
     @PrimaryKey val id: String,
     val uid: String,
     val localUri: String,

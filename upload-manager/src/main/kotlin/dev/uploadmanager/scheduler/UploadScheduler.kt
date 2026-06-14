@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
  * ExistingWorkPolicy.KEEP, so re-dispatch is always idempotent. WorkManager owns
  * all retry timing (revision doc 02 §2).
  */
-class UploadScheduler(
+internal class UploadScheduler(
     private val workManager: WorkManager,
     private val config: UploadManagerConfig,
 ) {

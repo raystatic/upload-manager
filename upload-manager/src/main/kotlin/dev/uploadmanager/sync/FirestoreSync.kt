@@ -15,7 +15,7 @@ import kotlinx.coroutines.tasks.await
  * is written at completion/dedup-hit (TERMINAL_ONLY and above); the lifecycle
  * projection only under FULL.
  */
-class FirestoreSync(
+internal class FirestoreSync(
     private val firestore: FirebaseFirestore?,
     private val policy: SyncPolicy,
     private val scope: CoroutineScope,
