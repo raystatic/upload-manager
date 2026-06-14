@@ -22,6 +22,7 @@ import dev.uploadmanager.api.UploadEvent
 import dev.uploadmanager.api.UploadState
 import dev.uploadmanager.core.UploadManagerCore
 import dev.uploadmanager.db.UploadTaskEntity
+import dev.uploadmanager.dedup.DeduplicationEngine
 import dev.uploadmanager.internal.SourceChecker
 import dev.uploadmanager.retry.FailureAction
 import dev.uploadmanager.retry.RetryClassifier
@@ -78,12 +79,51 @@ class FirebaseUploadWorker(
             return park(core, current, ERROR_AUTH_UNAVAILABLE)
         }
 
+        // Dedup (revision doc 01): if this content is already stored for the user,
+        // skip the transfer entirely. Best-effort — a failed check just proceeds.
+        val checksum = current.checksum
+        if (core.config.dedup.enabled && checksum != null) {
+            val dedup = core.dedupEngine.check(current.uid, checksum)
+            if (dedup is DeduplicationEngine.Result.Duplicate) {
+                return dedupHit(core, current, dedup.storagePath)
+            }
+        }
+
         if (current.fileSizeBytes >= core.config.foregroundThresholdBytes) {
             // Best-effort: background-start restrictions (Android 12+) can reject this.
             runCatching { setForeground(getForegroundInfo()) }
         }
 
         return core.uploadPermits.withPermit { transfer(core, current) }
+    }
+
+    private suspend fun dedupHit(core: UploadManagerCore, task: UploadTaskEntity, existingPath: String): Result {
+        val downloadUrl = runCatching {
+            FirebaseStorage.getInstance().reference.child(existingPath).downloadUrl.await().toString()
+        }.getOrNull()
+        val now = System.currentTimeMillis()
+        core.dao.markDedupHit(task.id, downloadUrl, existingPath, now)
+        task.checksum?.let { core.dedupEngine.recordHit(task.uid, it) }
+        core.stager.cleanup(task.id)
+        val mirrored = task.copy(
+            storagePath = existingPath, downloadUrl = downloadUrl, uploadState = UploadState.DEDUP_HIT,
+        )
+        core.firestoreSync.onCompleted(mirrored, downloadUrl)
+        core.firestoreSync.onTaskProjection(mirrored)
+        core.events.emit(UploadEvent.DedupHit(task.id, downloadUrl ?: ""))
+        return Result.success()
+    }
+
+    private fun recordSuccess(core: UploadManagerCore, task: UploadTaskEntity, downloadUrl: String) {
+        val checksum = task.checksum
+        if (core.config.dedup.enabled && checksum != null) {
+            core.dedupEngine.recordUpload(
+                task.uid, checksum, task.storagePath, task.fileSizeBytes, task.mimeType,
+            )
+        }
+        val done = task.copy(downloadUrl = downloadUrl, uploadState = UploadState.COMPLETED)
+        core.firestoreSync.onCompleted(done, downloadUrl)
+        core.firestoreSync.onTaskProjection(done)
     }
 
     private sealed class SourceOutcome {
@@ -150,6 +190,7 @@ class FirebaseUploadWorker(
         }
         core.registry.register(taskId, uploadTask)
         dao.updateState(taskId, UploadState.UPLOADING, null, now)
+        core.firestoreSync.onTaskProjection(task.copy(uploadState = UploadState.UPLOADING))
         core.events.emit(UploadEvent.Started(taskId, resuming = existing != null || sessionValid))
 
         var sessionPersisted = task.uploadSessionUri != null
@@ -185,6 +226,7 @@ class FirebaseUploadWorker(
                     dao.markCompleted(taskId, downloadUrl, System.currentTimeMillis())
                     core.registry.remove(taskId)
                     core.stager.cleanup(taskId)
+                    recordSuccess(core, task, downloadUrl)
                     core.events.emit(UploadEvent.Completed(taskId, downloadUrl))
                 } finally {
                     uploadTask.removeOnProgressListener(listener)

@@ -82,12 +82,19 @@ object UploadManager {
         }
 
         val now = System.currentTimeMillis()
+        val checksum = staged?.checksum
+        // Content-addressed when a checksum is known and dedup is on (revision doc 01),
+        // so concurrent same-content uploads converge on one object; taskId-addressed otherwise.
+        val storagePath = if (c.config.dedup.enabled && checksum != null) {
+            "users/$uid/files/$checksum"
+        } else {
+            "users/$uid/files/$id"
+        }
         val task = UploadTaskEntity(
             id = id,
             uid = uid,
             localUri = request.localUri.toString(),
-            // M1: taskId-addressed; switches to content-addressed paths with dedup (M2).
-            storagePath = "users/$uid/files/$id",
+            storagePath = storagePath,
             fileName = request.fileName,
             mimeType = request.mimeType,
             fileSizeBytes = staged?.sizeBytes ?: fingerprint.sizeBytes,

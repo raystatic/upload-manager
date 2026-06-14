@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import dev.uploadmanager.api.UploadManagerConfig
 import dev.uploadmanager.api.UploadState
@@ -42,6 +43,7 @@ abstract class EmulatorTestBase {
                     .build(),
             )
             FirebaseAuth.getInstance().useEmulator(EMULATOR_HOST, 9099)
+            FirebaseFirestore.getInstance().useEmulator(EMULATOR_HOST, 8080)
             FirebaseStorage.getInstance().useEmulator(EMULATOR_HOST, 9199)
         }
         UploadManager.initialise(context, UploadManagerConfig(enableLogging = true))
@@ -107,11 +109,13 @@ abstract class EmulatorTestBase {
         }
     }
 
-    protected suspend fun download(taskId: String): ByteArray =
-        FirebaseStorage.getInstance().reference
-            .child("users/$uid/files/$taskId")
-            .getBytes(MAX_DOWNLOAD_BYTES)
-            .await()
+    /** Downloads the object this task wrote, using its (possibly content-addressed) path. */
+    protected suspend fun download(taskId: String): ByteArray {
+        val path = UploadManager.coreOrNull(context)!!.dao.getById(taskId)!!.storagePath
+        return FirebaseStorage.getInstance().reference.child(path).getBytes(MAX_DOWNLOAD_BYTES).await()
+    }
+
+    protected fun firestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
 
     protected companion object {
         const val EMULATOR_HOST = "10.0.2.2"

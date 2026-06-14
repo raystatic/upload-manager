@@ -8,12 +8,12 @@ WorkManager, and long-horizon retries.
 
 > **Status: Milestone 1 (core pipeline) — pre-release.**
 > Implemented: enqueue → Room queue → WorkManager dispatch → resumable Storage
-> upload → fast/parked retry tiers → pause/resume/cancel → progress observation,
-> plus source-file staging (snapshot to app-private storage, SHA-256 in the same
-> pass) with fingerprint validation and restart-on-change for non-staged sources.
-> Coming next (M2/M3): content-hash deduplication, opt-in Firestore sync,
-> battery/thermal adaptive concurrency.
-> See [docs/spec-revisions/](docs/spec-revisions/) for the design.
+> upload → fast/parked retry tiers → pause/resume/cancel → progress observation;
+> source-file staging (snapshot + in-pass SHA-256) with restart-on-change;
+> per-uid content-hash **deduplication** (content-addressed paths, DEDUP_HIT);
+> and **opt-in Firestore sync** (`SyncPolicy`, off by default).
+> Coming next (M3): battery/thermal adaptive concurrency, upload batching,
+> App Check. See [docs/spec-revisions/](docs/spec-revisions/) for the design.
 
 ## Quick start
 
@@ -58,7 +58,8 @@ UploadManager.retry(taskId)
 **4. Deploy the security rules** to your Firebase project (the only backend setup):
 
 ```
-firebase deploy --only storage   # uses firebase/storage.rules
+firebase deploy --only storage              # uses firebase/storage.rules
+firebase deploy --only firestore:rules      # only if dedup or SyncPolicy != NONE
 ```
 
 Uploads land at `users/{uid}/files/{taskId}`, readable and writable only by

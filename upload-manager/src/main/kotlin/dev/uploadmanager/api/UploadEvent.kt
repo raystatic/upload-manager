@@ -25,6 +25,9 @@ sealed class UploadEvent {
 
     data class Completed(override val taskId: String, val downloadUrl: String) : UploadEvent()
 
+    /** Content already present for this user; no bytes transferred (revision doc 01). */
+    data class DedupHit(override val taskId: String, val downloadUrl: String) : UploadEvent()
+
     data class Failed(override val taskId: String, val reason: String) : UploadEvent()
 
     data class Cancelled(override val taskId: String) : UploadEvent()

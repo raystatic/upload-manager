@@ -22,6 +22,10 @@ data class UploadManagerConfig(
     val foregroundThresholdBytes: Long = 50L * 1024 * 1024,
     /** Source-file staging policy (revision doc 03). */
     val staging: StagingConfig = StagingConfig(),
+    /** Content-hash deduplication policy (revision doc 01). */
+    val dedup: DedupConfig = DedupConfig(),
+    /** Firestore mirroring policy (revision doc 04). Default off. */
+    val syncPolicy: SyncPolicy = SyncPolicy.NONE,
     val enableLogging: Boolean = false,
 ) {
     init {

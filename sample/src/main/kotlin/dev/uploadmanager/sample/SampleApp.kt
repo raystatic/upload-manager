@@ -4,6 +4,7 @@ import android.app.Application
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import dev.uploadmanager.UploadManager
 import dev.uploadmanager.api.NetworkPreference
@@ -30,6 +31,7 @@ class SampleApp : Application() {
 
         // 10.0.2.2 reaches the host machine from the Android emulator.
         FirebaseAuth.getInstance().useEmulator(EMULATOR_HOST, 9099)
+        FirebaseFirestore.getInstance().useEmulator(EMULATOR_HOST, 8080)
         FirebaseStorage.getInstance().useEmulator(EMULATOR_HOST, 9199)
 
         UploadManager.initialise(

@@ -98,6 +98,14 @@ interface UploadTaskDao {
     @Query("DELETE FROM upload_tasks WHERE uploadState = 'COMPLETED'")
     suspend fun clearCompleted(): Int
 
+    /** Dedup hit (revision doc 01): point at the existing object; zero bytes transferred. */
+    @Query(
+        "UPDATE upload_tasks SET uploadState = 'DEDUP_HIT', downloadUrl = :downloadUrl, " +
+            "storagePath = :storagePath, uploadedBytes = fileSizeBytes, errorCode = NULL, " +
+            "updatedAt = :now WHERE id = :id"
+    )
+    suspend fun markDedupHit(id: String, downloadUrl: String?, storagePath: String, now: Long)
+
     /**
      * Source content changed under a REFERENCE task (revision doc 03 §4): record the
      * new fingerprint and clear any session so the upload restarts from byte 0 with
