@@ -52,8 +52,8 @@ FirebaseUploadWorker.doWork
   unit-tested; framework code (thermal, battery, broadcasts) lives at the edges.
 
 See [spec-revisions/](spec-revisions/) for the rationale behind dedup, retry,
-staging, and sync, and [VERIFYING.md](VERIFYING.md) / the `*-TEST-PLAN.md` files
-for how to exercise each.
+staging, and sync, and [CUJS.md](CUJS.md) for how to exercise every behavior from
+the sample app.
 
 ## Deliberate non-goals
 
