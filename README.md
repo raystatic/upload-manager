@@ -6,14 +6,29 @@ enqueue a file and the SDK takes care of persistence across process death and
 reboots, resumable Firebase Storage sessions, OS-friendly scheduling via
 WorkManager, and long-horizon retries.
 
-> **Status: Milestone 1 (core pipeline) — pre-release.**
-> Implemented: enqueue → Room queue → WorkManager dispatch → resumable Storage
-> upload → fast/parked retry tiers → pause/resume/cancel → progress observation;
-> source-file staging (snapshot + in-pass SHA-256) with restart-on-change;
-> per-uid content-hash **deduplication** (content-addressed paths, DEDUP_HIT);
-> and **opt-in Firestore sync** (`SyncPolicy`, off by default).
-> Coming next (M3): battery/thermal adaptive concurrency, upload batching,
-> App Check. See [docs/spec-revisions/](docs/spec-revisions/) for the design.
+> **Status: v0.1.0 — feature-complete, pre-1.0.**
+
+## Features
+
+- **Durable, resumable uploads** — persisted to Room before any network activity;
+  resumes from the last confirmed byte across process death and reboots.
+- **OS-friendly scheduling** — one WorkManager request per task; expedited P0
+  through charging-gated P4 backfill; survives Doze and OEM battery managers.
+- **Long-horizon retry** — WorkManager-owned fast backoff → a parked tier
+  re-dispatched on connectivity/charging/daily sweep → a 7-day TTL.
+- **Pause / resume / cancel / retry** and a `Flow` of progress + lifecycle events.
+- **Source-file staging** — snapshots the file (with a free SHA-256) so edits or
+  deletes after enqueue can't corrupt the upload; restart-on-change for the rest.
+- **Per-uid content-hash dedup** — content-addressed paths; a repeat upload is a
+  zero-byte `DEDUP_HIT`. Best-effort: Firestore being down never blocks an upload.
+- **Opt-in Firestore mirroring** — `SyncPolicy` (off by default); progress bytes
+  are never mirrored.
+- **Adaptive concurrency** — scales with battery/charge/network and pauses all
+  transfers in the heat (thermal MODERATE+).
+- **Observability** — structured events plus an optional `UploadMetrics` sink.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for internals and
+[docs/spec-revisions/](docs/spec-revisions/) for the design rationale.
 
 ## Quick start
 
@@ -102,7 +117,45 @@ firebase emulators:start --project demo-upload-manager
 ./gradlew :upload-manager:connectedDebugAndroidTest     # end-to-end upload + resumability
 ```
 
+## Configuration reference
+
+All knobs live on `UploadManagerConfig` (sensible defaults shown):
+
+| Field | Default | Purpose |
+| --- | --- | --- |
+| `networkPreference` | `ALLOW_CELLULAR` | `WIFI_ONLY` forces unmetered for everything. |
+| `cellularMaxBytes` | 10 MB | Files larger than this wait for WiFi even on cellular. |
+| `maxConcurrentUploads` | 3 | Upper bound on concurrent transfers. |
+| `retryPolicy` | 5 fast attempts → park → 7-day TTL | See revision doc 02. |
+| `progressIntervalBytes` | 512 KB | Throttles progress persistence. |
+| `foregroundThresholdBytes` | 50 MB | Above this, runs as a foreground service. |
+| `staging` | `REFERENCE`, auto-copy ≤ 64 MB, 1 GB budget | Snapshot policy (revision doc 03). |
+| `dedup` | enabled | Per-uid content-hash dedup (revision doc 01). |
+| `syncPolicy` | `NONE` | Firestore mirroring (revision doc 04). |
+| `adaptiveConcurrency` | true | Battery/thermal/network-aware concurrency (spec §10). |
+| `largeUploadThresholdBytes` | 50 MB | "Large" uploads held off cellular / low battery / heat. |
+| `metrics` | null | Optional `UploadMetrics` sink (spec §13.2). |
+
+## Consuming the library
+
+Published with the `maven-publish` plugin (group `dev.uploadmanager`, artifact
+`upload-manager`). For local development:
+
+```bash
+./gradlew :upload-manager:publishToMavenLocal
+# then in the consumer: implementation("dev.uploadmanager:upload-manager:0.1.0")
+```
+
+## Optional: App Check & foreground limits
+
+- **App Check** is the host app's Firebase concern — install your provider (e.g.
+  Play Integrity) in `Application.onCreate()` before enqueuing if you require it.
+- **Android 14 foreground services** cap `dataSync` at ~6 h/day. Single-file
+  uploads won't hit this; very large backfills should rely on the parked tier and
+  resumable sessions to span multiple windows rather than one long foreground run.
+
 ## Requirements
 
 - minSdk 26, Java/Kotlin toolchain 17
-- Firebase Storage + Firebase Auth (the host app initialises Firebase)
+- Firebase Storage + Firebase Auth (the host app initialises Firebase); Firestore
+  is used by dedup and `SyncPolicy` and degrades gracefully if absent.

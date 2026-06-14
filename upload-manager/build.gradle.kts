@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
+    `maven-publish`
 }
 
 android {
@@ -19,6 +20,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Publish a single release variant with sources, consumable by other apps.
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -28,6 +36,28 @@ android {
 
 kotlin {
     jvmToolchain(17)
+}
+
+group = "dev.uploadmanager"
+version = "0.1.0"
+
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            afterEvaluate { from(components["release"]) }
+            artifactId = "upload-manager"
+            pom {
+                name.set("Upload Manager SDK")
+                description.set("Reliable, resumable, battery-aware Firebase upload manager for Android.")
+                licenses {
+                    license {
+                        name.set("The Apache License, Version 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                    }
+                }
+            }
+        }
+    }
 }
 
 dependencies {
