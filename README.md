@@ -88,6 +88,16 @@ uploads — *not* the emulator the sample uses for local testing. The SDK never
 touches Firebase initialisation; your app owns that (exactly as below), and the
 SDK uses whatever `FirebaseApp` you've set up.
 
+### Prerequisites
+
+| Need | Detail |
+| --- | --- |
+| Android | `minSdk` **26**+, JDK/Kotlin toolchain **17**, AndroidX. |
+| A Firebase project | With **Authentication** + **Cloud Storage** enabled. Add **Cloud Firestore** only if you keep dedup on (default) or use `SyncPolicy`. |
+| `google-services.json` | From that Firebase project, in your app module. |
+| A signed-in user | `enqueue` requires a signed-in `FirebaseAuth` user (any provider, incl. anonymous). |
+| Deployed security rules | The bundled Storage (and Firestore) rules — Step 4. |
+
 ### Step 1 — Create a Firebase project and add your app
 
 1. In the [Firebase console](https://console.firebase.google.com), create a
@@ -333,23 +343,23 @@ file; `StagingConfig(mode = StagingMode.REFERENCE, autoCopyBelowBytes = 0)` disa
 
 ## The sample app & verifying locally
 
-The [`sample/`](sample) app is a Compose **CUJ runner** that exercises every
-behavior against the Firebase Emulator Suite — no `google-services.json` needed.
+The [`sample/`](sample) app is a Compose demo with **one screen per use case** —
+it runs against the Firebase Emulator Suite with no `google-services.json` needed.
 
 ```bash
 cd firebase && firebase emulators:start --project demo-upload-manager   # terminal 1
 ./gradlew :sample:installDebug                                           # terminal 2
 ```
 
-It has a **config-preset selector** (Default, Reference/no-staging, Copy, Dedup
-off, Firestore sync FULL, Adaptive off, WiFi only), **one-tap CUJ buttons** that
-generate their own test files (small, large, duplicate, enqueue-then-delete), a
-live **event log**, and the task list with pause/resume/cancel/retry.
+The **Home** screen lists the CUJs; each screen (basic upload, resume-after-kill,
+pause/resume/cancel, retry/park, staging, dedup, adaptive concurrency, reboot)
+**explains what it demonstrates, how to trigger it (incl. the exact adb command),
+and what to watch**, with the action button, a live task list, and an event log.
+A **config-preset selector** on Home (Default, Reference/no-staging, Copy, Dedup
+off, Sync FULL, Adaptive off, WiFi only) switches behavior for the relevant CUJs.
 
-**Every CUJ, how to run it, and its pass criteria are in one place:
-[docs/CUJS.md](docs/CUJS.md).** New to the codebase? Start with
-[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) — it explains *why* each use case works
-(in plain language, ready to re-explain to a teammate). The automated subset runs
+**Every CUJ, how to run it, and its pass criteria are also in
+[docs/CUJS.md](docs/CUJS.md).** The automated subset runs
 on an emulator in CI on every push; the headline manual ones
 (resume-after-death, park→recovery, source-gone/restart, battery throttling,
 reboot) are tap-or-adb from the sample.
