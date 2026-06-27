@@ -22,6 +22,7 @@ so you never write upload plumbing again.
 - [Core problems it solves (and how)](#core-problems-it-solves-and-how)
 - [Production integration — step by step](#production-integration--step-by-step)
 - [Configuration reference](#configuration-reference)
+- [Optional features & their trade-offs](#optional-features--their-trade-offs)
 - [The sample app & verifying locally](#the-sample-app--verifying-locally)
 - [Architecture](#architecture)
 - [Project layout, contributing, security, license](#project-layout)
@@ -75,7 +76,7 @@ answers once, behind a clean API, with the design rationale written down in
 | **Background execution under OS limits** | One unique WorkManager request per task with priority-aware constraints (expedited P0 → charging-gated P4); survives Doze, reboots, OEM battery managers. | [`UploadScheduler`](upload-manager/src/main/kotlin/dev/uploadmanager/scheduler/UploadScheduler.kt) |
 | **Flaky networks / transient failures** | Two-tier retry: WorkManager-owned exponential backoff, then a **parked** tier re-dispatched on connectivity/charging/daily-sweep, up to a 7-day TTL. WorkManager owns timing; the SDK only classifies errors. | [`RetryClassifier`](upload-manager/src/main/kotlin/dev/uploadmanager/retry/RetryClassifier.kt), [`RetryPolicy`](upload-manager/src/main/kotlin/dev/uploadmanager/retry/RetryPolicy.kt), [`ParkedSweepWorker`](upload-manager/src/main/kotlin/dev/uploadmanager/scheduler/ParkedSweepWorker.kt) |
 | **Source file edited/deleted after enqueue** | Files are snapshotted into app-private storage at enqueue (with a free SHA-256); non-staged files are fingerprinted and **restart from zero** if changed, or fail fast (`SOURCE_GONE`) if deleted — never a corrupt object. | [`FileStager`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/FileStager.kt), [`SourceChecker`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/SourceChecker.kt) |
-| **Duplicate uploads waste storage/bandwidth** | Per-uid content-hash dedup: identical content uploads zero bytes (`DEDUP_HIT`) and points at the existing content-addressed object. Best-effort — Firestore being down never blocks an upload. | [`DeduplicationEngine`](upload-manager/src/main/kotlin/dev/uploadmanager/dedup/DeduplicationEngine.kt) |
+| **Duplicate uploads waste storage/bandwidth** | Per-uid content-hash dedup (optional, Firestore-backed — [details & trade-offs](#deduplication-on-by-default)): identical content uploads zero bytes (`DEDUP_HIT`) and points at the existing content-addressed object. Best-effort — Firestore being down never blocks an upload. | [`DeduplicationEngine`](upload-manager/src/main/kotlin/dev/uploadmanager/dedup/DeduplicationEngine.kt) |
 | **Battery / heat** | Concurrency scales with battery/charge/network through a resizable gate, and all transfers pause on thermal MODERATE+. | [`ConcurrencyPolicy`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/DeviceConditions.kt), [`ConcurrencyGovernor`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/ConcurrencyGovernor.kt), [`DeviceConditionsMonitor`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/DeviceConditionsMonitor.kt) |
 | **Cross-user data leaks** | Everything is scoped to `users/{uid}/`; dedup is per-uid (no cross-user index). Enforced by the bundled security rules. | [`firebase/storage.rules`](firebase/storage.rules), [`firebase/firestore.rules`](firebase/firestore.rules) |
 | **Observability & control** | `Flow` of progress + lifecycle events, an optional metrics sink, and `pause`/`resume`/`cancel`/`retry`. | [`UploadManager`](upload-manager/src/main/kotlin/dev/uploadmanager/UploadManager.kt), [`UploadMetrics`](upload-manager/src/main/kotlin/dev/uploadmanager/api/UploadMetrics.kt) |
@@ -268,11 +269,67 @@ All knobs live on [`UploadManagerConfig`](upload-manager/src/main/kotlin/dev/upl
 | `progressIntervalBytes` | 512 KB | Throttles progress persistence. |
 | `foregroundThresholdBytes` | 50 MB | Above this, runs as a foreground service. |
 | `staging` | `REFERENCE`, auto-copy ≤ 64 MB, 1 GB budget | Snapshot policy ([doc 03](docs/spec-revisions/03-source-file-durability.md)). |
-| `dedup` | enabled | Per-uid content-hash dedup ([doc 01](docs/spec-revisions/01-deduplication.md)). |
+| `dedup` | enabled | Per-uid content-hash dedup — **needs Firestore + rules**; [trade-offs](#deduplication-on-by-default) ([doc 01](docs/spec-revisions/01-deduplication.md)). |
 | `syncPolicy` | `NONE` | Firestore mirroring ([doc 04](docs/spec-revisions/04-firestore-sync.md)). |
 | `adaptiveConcurrency` | true | Battery/thermal/network-aware concurrency. |
 | `largeUploadThresholdBytes` | 50 MB | "Large" uploads held off cellular / low battery / heat. |
 | `metrics` | null | Optional `UploadMetrics` sink. |
+
+## Optional features & their trade-offs
+
+A few capabilities are **on by default and do non-obvious things to your Firebase
+project**. They're worth understanding (and you can turn any of them off).
+
+### Deduplication (on by default)
+
+**What it does:** before uploading, the SDK computes the file's **SHA-256** and
+checks a small per-user index in **Cloud Firestore** at
+`users/{uid}/checksumIndex/{checksum}`. If that content was already uploaded by
+the same user, it **skips the transfer entirely** (a `DEDUP_HIT`, zero bytes) and
+points the task at the existing object. On a successful upload it records the
+index entry.
+
+**Things to know — because they affect *your* project:**
+- It **requires Cloud Firestore** and the [Firestore rules](firebase/firestore.rules)
+  deployed. Without them, dedup degrades to a best-effort no-op (it never blocks
+  an upload, but you also get no dedup).
+- It **changes your Storage layout**: deduped objects are **content-addressed** at
+  `users/{uid}/files/{checksum}` (a hash), not `…/files/{taskId}`. If you browse
+  your bucket you'll see hashes — that's expected.
+- It is **per-user, by design** — there is no cross-user index. This is the
+  privacy-safe choice (a global index would let anyone test whether *some* user
+  has a given file). The flip side: it only dedupes a user re-uploading their *own*
+  identical file, and (today) only files small enough to be staged (≤ 64 MB).
+- **Cost:** one Firestore read per upload, plus index storage. For apps where users
+  rarely re-upload identical content, that cost may not be worth it.
+
+**Turn it off** (then you need only Storage + Auth — no Firestore, no extra rules):
+
+```kotlin
+UploadManagerConfig(dedup = DedupConfig(enabled = false))
+```
+
+### Firestore mirroring — `syncPolicy` (off by default)
+
+Optional cross-device visibility. `NONE` (default) writes nothing to Firestore;
+`TERMINAL_ONLY` writes one file record **at completion**; `FULL` also mirrors
+lifecycle. Progress bytes are never mirrored. Needs Firestore + rules when enabled.
+
+### Adaptive concurrency (on by default)
+
+Scales concurrent transfers with battery/charge/network and pauses everything in
+the heat. No backend dependency; set `adaptiveConcurrency = false` for a fixed cap.
+
+### Staging (on by default)
+
+Snapshots files ≤ 64 MB into app-private storage at enqueue (with a free hash), so
+editing/deleting the original can't corrupt the upload. Costs a copy per small
+file; `StagingConfig(mode = StagingMode.REFERENCE, autoCopyBelowBytes = 0)` disables it.
+
+> **TL;DR for the leanest setup:** `UploadManagerConfig(dedup = DedupConfig(enabled = false))`
+> gives you the reliable core (resumable upload + retry + persistence) needing
+> **only Firebase Storage + Auth**, with no Firestore, no extra rules, and
+> task-addressed storage paths.
 
 ## The sample app & verifying locally
 
