@@ -2,6 +2,7 @@
 
 ![CI](https://github.com/raystatic/upload-manager/actions/workflows/ci.yml/badge.svg)
 ![Instrumented](https://github.com/raystatic/upload-manager/actions/workflows/instrumented.yml/badge.svg)
+[![JitPack](https://jitpack.io/v/raystatic/upload-manager.svg)](https://jitpack.io/#raystatic/upload-manager)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 A plug-and-play, open-source **upload manager** for Android apps, backed by the
@@ -115,22 +116,35 @@ auto-initialises from it — no hard-coded keys in code.
 
 ### Step 3 — Add the dependencies
 
-Until it's on Maven Central, publish the SDK to your local/internal repo:
+The library is published publicly via **JitPack** (no extra account needed). Add
+the JitPack repository, then the dependency:
 
-```bash
-./gradlew :upload-manager:publishToMavenLocal
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven("https://jitpack.io")   // ← add this
+    }
+}
 ```
 
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("dev.uploadmanager:upload-manager:0.1.0")
+    // Replace <version> with the latest tag, e.g. 0.1.0  (see the JitPack badge above)
+    implementation("com.github.raystatic.upload-manager:upload-manager:<version>")
+
     implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
-    implementation("com.google.firebase:firebase-auth")     // required
-    implementation("com.google.firebase:firebase-storage")  // required
+    implementation("com.google.firebase:firebase-auth")      // required
+    implementation("com.google.firebase:firebase-storage")   // required
     implementation("com.google.firebase:firebase-firestore") // only if dedup/sync
 }
 ```
+
+> Prefer a local build? `./gradlew :upload-manager:publishToMavenLocal` then use
+> `implementation("dev.uploadmanager:upload-manager:0.1.0")` with `mavenLocal()`.
 
 Consumer R8/ProGuard rules ship with the library — nothing to add for release
 builds.

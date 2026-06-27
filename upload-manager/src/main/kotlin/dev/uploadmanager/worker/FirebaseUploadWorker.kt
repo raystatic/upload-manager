@@ -85,7 +85,17 @@ internal class FirebaseUploadWorker(
         if (core.config.dedup.enabled && checksum != null) {
             val dedup = core.dedupEngine.check(current.uid, checksum)
             if (dedup is DeduplicationEngine.Result.Duplicate) {
-                return dedupHit(core, current, dedup.storagePath)
+                // Verify the referenced object actually still exists. A stale index
+                // entry (object deleted after upload) must NOT be reported as a hit —
+                // otherwise we'd mark success with nothing stored. Fall through to a
+                // real upload in that case.
+                val existingUrl = runCatching {
+                    FirebaseStorage.getInstance().reference.child(dedup.storagePath)
+                        .downloadUrl.await().toString()
+                }.getOrNull()
+                if (existingUrl != null) {
+                    return dedupHit(core, current, dedup.storagePath, existingUrl)
+                }
             }
         }
 
@@ -106,10 +116,12 @@ internal class FirebaseUploadWorker(
         return core.governor.withSlot { transfer(core, current) }
     }
 
-    private suspend fun dedupHit(core: UploadManagerCore, task: UploadTaskEntity, existingPath: String): Result {
-        val downloadUrl = runCatching {
-            FirebaseStorage.getInstance().reference.child(existingPath).downloadUrl.await().toString()
-        }.getOrNull()
+    private suspend fun dedupHit(
+        core: UploadManagerCore,
+        task: UploadTaskEntity,
+        existingPath: String,
+        downloadUrl: String,
+    ): Result {
         val now = System.currentTimeMillis()
         core.dao.markDedupHit(task.id, downloadUrl, existingPath, now)
         task.checksum?.let { core.dedupEngine.recordHit(task.uid, it) }
