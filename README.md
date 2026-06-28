@@ -11,26 +11,61 @@ persistence across process death and reboots, resumable Storage sessions,
 OS-friendly background scheduling, deduplication, and battery-aware throttling —
 so you never write upload plumbing again.
 
-> **Status: v0.1.0** — feature-complete, pre-1.0 (API may still change).
+> **Status: v0.1.1** — feature-complete, pre-1.0 (API may still change).
 > Both the unit and the on-emulator instrumented test suites are green on every
 > push.
 
+## Demo
 
 https://github.com/user-attachments/assets/9581b1aa-650a-414b-b409-218356e960c4
-
 
 ## Table of contents
 
 - [Demo](#demo)
+- [Quick start](#quick-start)
 - [What is this](#what-is-this)
 - [Why it's needed](#why-its-needed)
 - [Core problems it solves (and how)](#core-problems-it-solves-and-how)
 - [Production integration — step by step](#production-integration--step-by-step)
 - [Configuration reference](#configuration-reference)
 - [Optional features & their trade-offs](#optional-features--their-trade-offs)
+- [Troubleshooting](#troubleshooting)
 - [The sample app & verifying locally](#the-sample-app--verifying-locally)
 - [Architecture](#architecture)
 - [Project layout, contributing, security, license](#project-layout)
+
+## Quick start
+
+The leanest setup — resumable uploads + retry + persistence across process death,
+on **Storage + Auth only** (no Firestore). For the full feature path (dedup,
+cross-device sync) see [Production integration](#production-integration--step-by-step).
+
+```kotlin
+// settings.gradle.kts → dependencyResolutionManagement { repositories { … } }
+maven("https://jitpack.io")
+```
+
+```kotlin
+// app/build.gradle.kts → dependencies { … }
+implementation("com.github.raystatic.upload-manager:upload-manager:v0.1.1")
+implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
+implementation("com.google.firebase:firebase-auth")
+implementation("com.google.firebase:firebase-storage")
+```
+
+```kotlin
+// Application.onCreate() — your app owns Firebase init + sign-in
+FirebaseApp.initializeApp(this)
+UploadManager.initialise(this, UploadManagerConfig(dedup = DedupConfig(enabled = false)))
+
+// Once a user is signed in (any FirebaseAuth provider, incl. anonymous):
+val taskId = UploadManager.enqueue(UploadRequest(uri, "image/jpeg", "photo.jpg"))
+UploadManager.observe(taskId).collect { event -> /* Progress / Completed / Failed */ }
+```
+
+**Two backend steps are required:** enable **Auth + Cloud Storage** in your Firebase
+project, and **deploy the Storage rules** (Step 4) — until the rules are published,
+every upload fails with `PERMISSION_DENIED`. That's the whole setup for the lean path.
 
 ## What is this
 
@@ -149,8 +184,8 @@ dependencyResolutionManagement {
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    // Replace <version> with the latest tag, e.g. 0.1.0  (see the JitPack badge above)
-    implementation("com.github.raystatic.upload-manager:upload-manager:<version>")
+    // Latest release tag — note the leading `v` (see the JitPack badge for newer ones)
+    implementation("com.github.raystatic.upload-manager:upload-manager:v0.1.1")
 
     implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
     implementation("com.google.firebase:firebase-auth")      // required
@@ -160,7 +195,7 @@ dependencies {
 ```
 
 > Prefer a local build? `./gradlew :upload-manager:publishToMavenLocal` then use
-> `implementation("dev.uploadmanager:upload-manager:0.1.0")` with `mavenLocal()`.
+> `implementation("dev.uploadmanager:upload-manager:0.1.1")` with `mavenLocal()`.
 
 Consumer R8/ProGuard rules ship with the library — nothing to add for release
 builds.
@@ -376,6 +411,18 @@ file; `StagingConfig(mode = StagingMode.REFERENCE, autoCopyBelowBytes = 0)` disa
 > gives you the reliable core (resumable upload + retry + persistence) needing
 > **only Firebase Storage + Auth**, with no Firestore, no extra rules, and
 > task-addressed storage paths.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `PERMISSION_DENIED` on every upload | Security rules not deployed — Storage/Firestore start in "deny everyone" production mode | Deploy the bundled rules — [Step 4](#step-4--deploy-the-security-rules-the-only-backend-setup). |
+| `IllegalStateException: enqueue requires a signed-in FirebaseAuth user` | No user signed in before the first `enqueue` | Sign a user in first (any provider, including anonymous). |
+| `W … No AppCheckProvider installed … using placeholder token` | App Check isn't installed (it's optional) | Harmless unless you enforce App Check. Install a provider (Play Integrity in production) to silence it. |
+| Sign-in fails: "auth credential is incorrect/expired" on first login | Email Enumeration Protection returns one generic error for "no account" and "wrong password" | Create the account first (or use a flow that creates-on-miss), and enable the **Email/Password** provider in the console. |
+| JitPack dependency won't resolve | The tag's first build hasn't been triggered, or the coordinate is wrong | Open the JitPack badge once to build the tag; use `…:upload-manager:v0.1.1` (keep the leading `v`). |
+| Upload stuck in `QUEUED`, never starts | A constraint isn't met (WiFi-only, battery-not-low, or charging for P4) | Check `networkPreference`/priority and device state; files over `cellularMaxBytes` wait for WiFi. |
+| `SOURCE_GONE` failure | The source file was deleted before a non-staged upload finished | Use staging (default for ≤ 64 MB), or keep the source until the upload completes. |
 
 ## The sample app & verifying locally
 
