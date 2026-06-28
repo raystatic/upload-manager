@@ -98,6 +98,10 @@ internal interface UploadTaskDao {
     @Query("DELETE FROM upload_tasks WHERE uploadState = 'COMPLETED'")
     suspend fun clearCompleted(): Int
 
+    /** Re-point (or clear) the staged snapshot path, e.g. when retry() re-stages. */
+    @Query("UPDATE upload_tasks SET stagedPath = :path, updatedAt = :now WHERE id = :id")
+    suspend fun updateStagedPath(id: String, path: String?, now: Long)
+
     /** Dedup hit (revision doc 01): point at the existing object; zero bytes transferred. */
     @Query(
         "UPDATE upload_tasks SET uploadState = 'DEDUP_HIT', downloadUrl = :downloadUrl, " +

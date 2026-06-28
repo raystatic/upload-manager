@@ -1,5 +1,9 @@
 package dev.uploadmanager.sample
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -97,6 +102,7 @@ fun UploadListScreen(viewModel: UploadsViewModel = viewModel()) {
 
 @Composable
 private fun UploadCard(row: UploadRow, viewModel: UploadsViewModel) {
+    val context = LocalContext.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -133,12 +139,27 @@ private fun UploadCard(row: UploadRow, viewModel: UploadsViewModel) {
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             )
 
-            if (row.isLocal && row.state != null) {
+            val canControl = row.isLocal && row.state != null
+            if (canControl || row.downloadUrl != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Controls(row, viewModel)
+                    if (canControl) Controls(row, viewModel)
+                    row.downloadUrl?.let { url ->
+                        Button(onClick = { openUrl(context, url) }) { Text("Open") }
+                    }
                 }
             }
         }
+    }
+}
+
+/** Open an uploaded file via its download URL (browser / a registered viewer). */
+private fun openUrl(context: Context, url: String) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }.onFailure {
+        Toast.makeText(context, "No app can open this file", Toast.LENGTH_SHORT).show()
     }
 }
 

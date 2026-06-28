@@ -38,6 +38,18 @@ internal class UploadScheduler(
     /** Re-dispatch after a park: the old request finished, so KEEP enqueues fresh. */
     fun redispatch(task: UploadTaskEntity) = dispatch(task)
 
+    /**
+     * Force a fresh run, replacing any existing unique work (used by retry()). Unlike
+     * [dispatch]'s KEEP, this never no-ops against a just-cancelled or stuck request.
+     */
+    fun dispatchReplacing(task: UploadTaskEntity) {
+        workManager.enqueueUniqueWork(
+            uniqueName(task.id),
+            ExistingWorkPolicy.REPLACE,
+            buildRequest(task),
+        )
+    }
+
     fun cancel(taskId: String) {
         workManager.cancelUniqueWork(uniqueName(taskId))
     }
