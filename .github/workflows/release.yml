@@ -1,0 +1,43 @@
+name: Release
+
+# On every merge to main, tag the version declared in the library build file (if
+# it isn't already tagged) and cut a GitHub Release. The tag is what JitPack builds
+# from — bump `version` in upload-manager/build.gradle.kts and merge to release.
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version → tag
+        id: ver
+        run: |
+          VERSION=$(grep -E '^version = "' upload-manager/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$VERSION" ]; then echo "Could not read version from build.gradle.kts"; exit 1; fi
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Tag & release if the version is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists — nothing to release."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "Automated release for $TAG. See CHANGELOG.md. Consume via JitPack: com.github.${{ github.repository_owner }}.${{ github.event.repository.name }}:upload-manager:$TAG"

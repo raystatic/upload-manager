@@ -2,6 +2,7 @@
 
 ![CI](https://github.com/raystatic/upload-manager/actions/workflows/ci.yml/badge.svg)
 ![Instrumented](https://github.com/raystatic/upload-manager/actions/workflows/instrumented.yml/badge.svg)
+[![JitPack](https://jitpack.io/v/raystatic/upload-manager.svg)](https://jitpack.io/#raystatic/upload-manager)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 A plug-and-play, open-source **upload manager** for Android apps, backed by the
@@ -20,11 +21,13 @@ https://github.com/user-attachments/assets/c49ca34d-8810-4d80-a187-e8418a7e1fce
 
 ## Table of contents
 
+- [Demo](#demo)
 - [What is this](#what-is-this)
 - [Why it's needed](#why-its-needed)
 - [Core problems it solves (and how)](#core-problems-it-solves-and-how)
 - [Production integration — step by step](#production-integration--step-by-step)
 - [Configuration reference](#configuration-reference)
+- [Optional features & their trade-offs](#optional-features--their-trade-offs)
 - [The sample app & verifying locally](#the-sample-app--verifying-locally)
 - [Architecture](#architecture)
 - [Project layout, contributing, security, license](#project-layout)
@@ -78,7 +81,7 @@ answers once, behind a clean API, with the design rationale written down in
 | **Background execution under OS limits** | One unique WorkManager request per task with priority-aware constraints (expedited P0 → charging-gated P4); survives Doze, reboots, OEM battery managers. | [`UploadScheduler`](upload-manager/src/main/kotlin/dev/uploadmanager/scheduler/UploadScheduler.kt) |
 | **Flaky networks / transient failures** | Two-tier retry: WorkManager-owned exponential backoff, then a **parked** tier re-dispatched on connectivity/charging/daily-sweep, up to a 7-day TTL. WorkManager owns timing; the SDK only classifies errors. | [`RetryClassifier`](upload-manager/src/main/kotlin/dev/uploadmanager/retry/RetryClassifier.kt), [`RetryPolicy`](upload-manager/src/main/kotlin/dev/uploadmanager/retry/RetryPolicy.kt), [`ParkedSweepWorker`](upload-manager/src/main/kotlin/dev/uploadmanager/scheduler/ParkedSweepWorker.kt) |
 | **Source file edited/deleted after enqueue** | Files are snapshotted into app-private storage at enqueue (with a free SHA-256); non-staged files are fingerprinted and **restart from zero** if changed, or fail fast (`SOURCE_GONE`) if deleted — never a corrupt object. | [`FileStager`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/FileStager.kt), [`SourceChecker`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/SourceChecker.kt) |
-| **Duplicate uploads waste storage/bandwidth** | Per-uid content-hash dedup: identical content uploads zero bytes (`DEDUP_HIT`) and points at the existing content-addressed object. Best-effort — Firestore being down never blocks an upload. | [`DeduplicationEngine`](upload-manager/src/main/kotlin/dev/uploadmanager/dedup/DeduplicationEngine.kt) |
+| **Duplicate uploads waste storage/bandwidth** | Per-uid content-hash dedup (optional, Firestore-backed — [details & trade-offs](#deduplication-on-by-default)): identical content uploads zero bytes (`DEDUP_HIT`) and points at the existing content-addressed object. Best-effort — Firestore being down never blocks an upload. | [`DeduplicationEngine`](upload-manager/src/main/kotlin/dev/uploadmanager/dedup/DeduplicationEngine.kt) |
 | **Battery / heat** | Concurrency scales with battery/charge/network through a resizable gate, and all transfers pause on thermal MODERATE+. | [`ConcurrencyPolicy`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/DeviceConditions.kt), [`ConcurrencyGovernor`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/ConcurrencyGovernor.kt), [`DeviceConditionsMonitor`](upload-manager/src/main/kotlin/dev/uploadmanager/internal/DeviceConditionsMonitor.kt) |
 | **Cross-user data leaks** | Everything is scoped to `users/{uid}/`; dedup is per-uid (no cross-user index). Enforced by the bundled security rules. | [`firebase/storage.rules`](firebase/storage.rules), [`firebase/firestore.rules`](firebase/firestore.rules) |
 | **Observability & control** | `Flow` of progress + lifecycle events, an optional metrics sink, and `pause`/`resume`/`cancel`/`retry`. | [`UploadManager`](upload-manager/src/main/kotlin/dev/uploadmanager/UploadManager.kt), [`UploadMetrics`](upload-manager/src/main/kotlin/dev/uploadmanager/api/UploadMetrics.kt) |
@@ -89,6 +92,16 @@ This is the **real-app path**: your own Firebase project, real users, real
 uploads — *not* the emulator the sample uses for local testing. The SDK never
 touches Firebase initialisation; your app owns that (exactly as below), and the
 SDK uses whatever `FirebaseApp` you've set up.
+
+### Prerequisites
+
+| Need | Detail |
+| --- | --- |
+| Android | `minSdk` **26**+, JDK/Kotlin toolchain **17**, AndroidX. |
+| A Firebase project | With **Authentication** + **Cloud Storage** enabled. Add **Cloud Firestore** only if you keep dedup on (default) or use `SyncPolicy`. |
+| `google-services.json` | From that Firebase project, in your app module. |
+| A signed-in user | `enqueue` requires a signed-in `FirebaseAuth` user (any provider, incl. anonymous). |
+| Deployed security rules | The bundled Storage (and Firestore) rules — Step 4. |
 
 ### Step 1 — Create a Firebase project and add your app
 
@@ -119,22 +132,35 @@ auto-initialises from it — no hard-coded keys in code.
 
 ### Step 3 — Add the dependencies
 
-Until it's on Maven Central, publish the SDK to your local/internal repo:
+The library is published publicly via **JitPack** (no extra account needed). Add
+the JitPack repository, then the dependency:
 
-```bash
-./gradlew :upload-manager:publishToMavenLocal
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven("https://jitpack.io")   // ← add this
+    }
+}
 ```
 
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("dev.uploadmanager:upload-manager:0.1.0")
+    // Replace <version> with the latest tag, e.g. 0.1.0  (see the JitPack badge above)
+    implementation("com.github.raystatic.upload-manager:upload-manager:<version>")
+
     implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
-    implementation("com.google.firebase:firebase-auth")     // required
-    implementation("com.google.firebase:firebase-storage")  // required
+    implementation("com.google.firebase:firebase-auth")      // required
+    implementation("com.google.firebase:firebase-storage")   // required
     implementation("com.google.firebase:firebase-firestore") // only if dedup/sync
 }
 ```
+
+> Prefer a local build? `./gradlew :upload-manager:publishToMavenLocal` then use
+> `implementation("dev.uploadmanager:upload-manager:0.1.0")` with `mavenLocal()`.
 
 Consumer R8/ProGuard rules ship with the library — nothing to add for release
 builds.
@@ -258,31 +284,87 @@ All knobs live on [`UploadManagerConfig`](upload-manager/src/main/kotlin/dev/upl
 | `progressIntervalBytes` | 512 KB | Throttles progress persistence. |
 | `foregroundThresholdBytes` | 50 MB | Above this, runs as a foreground service. |
 | `staging` | `REFERENCE`, auto-copy ≤ 64 MB, 1 GB budget | Snapshot policy ([doc 03](docs/spec-revisions/03-source-file-durability.md)). |
-| `dedup` | enabled | Per-uid content-hash dedup ([doc 01](docs/spec-revisions/01-deduplication.md)). |
+| `dedup` | enabled | Per-uid content-hash dedup — **needs Firestore + rules**; [trade-offs](#deduplication-on-by-default) ([doc 01](docs/spec-revisions/01-deduplication.md)). |
 | `syncPolicy` | `NONE` | Firestore mirroring ([doc 04](docs/spec-revisions/04-firestore-sync.md)). |
 | `adaptiveConcurrency` | true | Battery/thermal/network-aware concurrency. |
 | `largeUploadThresholdBytes` | 50 MB | "Large" uploads held off cellular / low battery / heat. |
 | `metrics` | null | Optional `UploadMetrics` sink. |
 
+## Optional features & their trade-offs
+
+A few capabilities are **on by default and do non-obvious things to your Firebase
+project**. They're worth understanding (and you can turn any of them off).
+
+### Deduplication (on by default)
+
+**What it does:** before uploading, the SDK computes the file's **SHA-256** and
+checks a small per-user index in **Cloud Firestore** at
+`users/{uid}/checksumIndex/{checksum}`. If that content was already uploaded by
+the same user, it **skips the transfer entirely** (a `DEDUP_HIT`, zero bytes) and
+points the task at the existing object. On a successful upload it records the
+index entry.
+
+**Things to know — because they affect *your* project:**
+- It **requires Cloud Firestore** and the [Firestore rules](firebase/firestore.rules)
+  deployed. Without them, dedup degrades to a best-effort no-op (it never blocks
+  an upload, but you also get no dedup).
+- It **changes your Storage layout**: deduped objects are **content-addressed** at
+  `users/{uid}/files/{checksum}` (a hash), not `…/files/{taskId}`. If you browse
+  your bucket you'll see hashes — that's expected.
+- It is **per-user, by design** — there is no cross-user index. This is the
+  privacy-safe choice (a global index would let anyone test whether *some* user
+  has a given file). The flip side: it only dedupes a user re-uploading their *own*
+  identical file, and (today) only files small enough to be staged (≤ 64 MB).
+- **Cost:** one Firestore read per upload, plus index storage. For apps where users
+  rarely re-upload identical content, that cost may not be worth it.
+
+**Turn it off** (then you need only Storage + Auth — no Firestore, no extra rules):
+
+```kotlin
+UploadManagerConfig(dedup = DedupConfig(enabled = false))
+```
+
+### Firestore mirroring — `syncPolicy` (off by default)
+
+Optional cross-device visibility. `NONE` (default) writes nothing to Firestore;
+`TERMINAL_ONLY` writes one file record **at completion**; `FULL` also mirrors
+lifecycle. Progress bytes are never mirrored. Needs Firestore + rules when enabled.
+
+### Adaptive concurrency (on by default)
+
+Scales concurrent transfers with battery/charge/network and pauses everything in
+the heat. No backend dependency; set `adaptiveConcurrency = false` for a fixed cap.
+
+### Staging (on by default)
+
+Snapshots files ≤ 64 MB into app-private storage at enqueue (with a free hash), so
+editing/deleting the original can't corrupt the upload. Costs a copy per small
+file; `StagingConfig(mode = StagingMode.REFERENCE, autoCopyBelowBytes = 0)` disables it.
+
+> **TL;DR for the leanest setup:** `UploadManagerConfig(dedup = DedupConfig(enabled = false))`
+> gives you the reliable core (resumable upload + retry + persistence) needing
+> **only Firebase Storage + Auth**, with no Firestore, no extra rules, and
+> task-addressed storage paths.
+
 ## The sample app & verifying locally
 
-The [`sample/`](sample) app is a Compose **CUJ runner** that exercises every
-behavior against the Firebase Emulator Suite — no `google-services.json` needed.
+The [`sample/`](sample) app is a Compose demo with **one screen per use case** —
+it runs against the Firebase Emulator Suite with no `google-services.json` needed.
 
 ```bash
 cd firebase && firebase emulators:start --project demo-upload-manager   # terminal 1
 ./gradlew :sample:installDebug                                           # terminal 2
 ```
 
-It has a **config-preset selector** (Default, Reference/no-staging, Copy, Dedup
-off, Firestore sync FULL, Adaptive off, WiFi only), **one-tap CUJ buttons** that
-generate their own test files (small, large, duplicate, enqueue-then-delete), a
-live **event log**, and the task list with pause/resume/cancel/retry.
+The **Home** screen lists the CUJs; each screen (basic upload, resume-after-kill,
+pause/resume/cancel, retry/park, staging, dedup, adaptive concurrency, reboot)
+**explains what it demonstrates, how to trigger it (incl. the exact adb command),
+and what to watch**, with the action button, a live task list, and an event log.
+A **config-preset selector** on Home (Default, Reference/no-staging, Copy, Dedup
+off, Sync FULL, Adaptive off, WiFi only) switches behavior for the relevant CUJs.
 
-**Every CUJ, how to run it, and its pass criteria are in one place:
-[docs/CUJS.md](docs/CUJS.md).** New to the codebase? Start with
-[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) — it explains *why* each use case works
-(in plain language, ready to re-explain to a teammate). The automated subset runs
+**Every CUJ, how to run it, and its pass criteria are also in
+[docs/CUJS.md](docs/CUJS.md).** The automated subset runs
 on an emulator in CI on every push; the headline manual ones
 (resume-after-death, park→recovery, source-gone/restart, battery throttling,
 reboot) are tap-or-adb from the sample.

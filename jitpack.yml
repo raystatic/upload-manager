@@ -1,0 +1,6 @@
+# JitPack build config — publishes the library so apps can depend on it via
+# https://jitpack.io with no Maven Central / signing setup.
+jdk:
+  - openjdk17
+install:
+  - ./gradlew :upload-manager:publishToMavenLocal -x test --no-configuration-cache
