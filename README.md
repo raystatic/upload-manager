@@ -16,7 +16,7 @@ so you never write upload plumbing again.
 > push.
 
 
-https://github.com/user-attachments/assets/c49ca34d-8810-4d80-a187-e8418a7e1fce
+https://github.com/user-attachments/assets/9581b1aa-650a-414b-b409-218356e960c4
 
 
 ## Table of contents
@@ -167,18 +167,49 @@ builds.
 
 ### Step 4 — Deploy the security rules (the only backend setup)
 
-Copy [`firebase/storage.rules`](firebase/storage.rules) (and
-[`firebase/firestore.rules`](firebase/firestore.rules) if using dedup/sync) into
-your project and deploy:
+**Why this step exists.** Security Rules are the lock on your data's front door:
+Firebase checks them on *every* read/write and asks "is this caller allowed?" When
+you create Storage or Firestore in **production mode**, the default answer is **"deny
+everyone"** — the door is locked shut. So until you publish rules that allow it,
+**every upload fails with `PERMISSION_DENIED`.** The bundled rules replace the
+deny-all with a precise, safe policy: *a signed-in user may read/write only their
+own files under `users/{their-uid}/…`, and nobody else's.* That's exactly what the
+SDK needs. **Do not skip this** — and never use "test mode," which opens your bucket
+to the whole internet.
+
+You only need the Firestore rules if **dedup (on by default) or `SyncPolicy`** is
+enabled; otherwise Storage rules alone are enough.
+
+There are two ways to deploy — pick one.
+
+**Option A — Firebase Console (no command line, easiest):**
+
+1. [Firebase console](https://console.firebase.google.com) → your project.
+2. **Build → Storage → Rules** tab. Select all the existing text, delete it, paste
+   the contents of [`firebase/storage.rules`](firebase/storage.rules), click **Publish**.
+3. (If using dedup/sync) **Build → Firestore Database → Rules** tab. Select all,
+   delete, paste [`firebase/firestore.rules`](firebase/firestore.rules), click **Publish**.
+
+Changes go live in a few seconds. (A default line like `allow read, write: if false;`
+is the "deny everyone" you're replacing — deleting it is correct.)
+
+**Option B — Firebase CLI (deploys straight from the repo files):**
 
 ```bash
-firebase deploy --only storage
-firebase deploy --only firestore:rules   # if dedup or SyncPolicy != NONE
+npm install -g firebase-tools          # once
+firebase login                         # opens a browser
+cd firebase                            # where firebase.json + the .rules files live
+firebase use --add                     # pick your project (creates .firebaserc)
+firebase deploy --only storage,firestore:rules
 ```
 
-These scope every object and index entry to `users/{uid}/` and reject all
-cross-user access. **Do not skip this** — uploads to an unprotected bucket are a
-security hole.
+To deploy them separately: `firebase deploy --only storage` and
+`firebase deploy --only firestore:rules`.
+
+Either way, the rules scope every object and index entry to `users/{uid}/` and reject
+all cross-user access. After publishing, upload a file and confirm it lands under
+`users/<uid>/files/…` in your bucket; a `PERMISSION_DENIED` in
+`adb logcat -s UploadManager:D` almost always means a rule wasn't published.
 
 ### Step 5 — Initialise Firebase and sign the user in (your app's job)
 
@@ -267,9 +298,9 @@ it, applies the google-services plugin, and
 initialises real Firebase instead of the emulator (see its `BuildConfig.USE_EMULATOR`
 branch). That file is the canonical example of the demo-vs-production split.
 
-> **Screenshots:** the sample's UI (preset bar, CUJ buttons, live task list, event
-> log) is the fastest way to see the API in action; captured images can live under
-> `docs/images/`.
+> **Screenshots:** the sample's UI (a multi-file upload list with per-row progress and
+> pause/resume/cancel, mirrored across devices) is the fastest way to see the API in
+> action; captured images can live under `docs/images/`.
 
 ## Configuration reference
 
@@ -348,22 +379,35 @@ file; `StagingConfig(mode = StagingMode.REFERENCE, autoCopyBelowBytes = 0)` disa
 
 ## The sample app & verifying locally
 
-The [`sample/`](sample) app is a Compose demo with **one screen per use case** —
-it runs against the Firebase Emulator Suite with no `google-services.json` needed.
+The [`sample/`](sample) app is an **upload manager** that shows the SDK doing its job
+in a realistic product. You sign in with email + password, tap **Select files** to
+pick **multiple files at once**, and each one uploads in the background with its own
+**file size, live progress, and pause/resume/cancel controls**. Because the SDK
+mirrors task state to Firestore (`SyncPolicy.FULL`), **a second device signed in to the
+same account sees every upload appear live** — that's why sign-in is email/password,
+not anonymous (anonymous auth gives each device a different `uid`, so it couldn't share
+a list).
 
 ```bash
 cd firebase && firebase emulators:start --project demo-upload-manager   # terminal 1
 ./gradlew :sample:installDebug                                           # terminal 2
 ```
 
-The **Home** screen lists the CUJs; each screen (basic upload, resume-after-kill,
-pause/resume/cancel, retry/park, staging, dedup, adaptive concurrency, reboot)
-**explains what it demonstrates, how to trigger it (incl. the exact adb command),
-and what to watch**, with the action button, a live task list, and an event log.
-A **config-preset selector** on Home (Default, Reference/no-staging, Copy, Dedup
-off, Sync FULL, Adaptive off, WiFi only) switches behavior for the relevant CUJs.
+> **Cross-device demo** needs a real project (two devices can't share one local
+> emulator): drop in your `google-services.json`, enable the **Email/Password** auth
+> provider, deploy the rules (Step 4), then sign in with the same credentials on both
+> devices.
 
-**Every CUJ, how to run it, and its pass criteria are also in
+The app is built from a few small files worth reading as integration examples:
+[`UploadsViewModel`](sample/src/main/kotlin/dev/uploadmanager/sample/UploadsViewModel.kt)
+(enqueue + merge `observeAll()` with a live Firestore view of the account's uploads),
+[`UploadListScreen`](sample/src/main/kotlin/dev/uploadmanager/sample/UploadListScreen.kt)
+(multi-select picker, per-row size/progress/controls), and
+[`SignInScreen`](sample/src/main/kotlin/dev/uploadmanager/sample/SignInScreen.kt).
+Because the upload is just `UploadManager.enqueue(...)`, killing the app mid-upload and
+reopening it resumes the transfer — the headline CUJ, visible in the list.
+
+**Every CUJ, how to run it, and its pass criteria are in
 [docs/CUJS.md](docs/CUJS.md).** The automated subset runs
 on an emulator in CI on every push; the headline manual ones
 (resume-after-death, park→recovery, source-gone/restart, battery throttling,
@@ -393,7 +437,7 @@ enqueue → fingerprint/stage → Room(PENDING) → WorkManager
 
 ```
 upload-manager/   the SDK (Android library; public API = UploadManager + api/)
-sample/           Compose CUJ-runner app (Firebase Emulator Suite)
+sample/           Compose multi-file upload-manager demo (cross-device via Firestore)
 firebase/         security-rules templates + emulator config
 docs/             ARCHITECTURE, CUJS, VERIFYING, spec + revision docs
 ```

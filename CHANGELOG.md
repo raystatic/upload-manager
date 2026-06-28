@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `taskProjection` (under `SyncPolicy.FULL`) now mirrors `originalFilename`,
+  `sizeBytes`, and `mimeType` so observers on another device can show a file's
+  name and size while it is still uploading. `uploadedBytes` remains unmirrored.
+
+### Fixed
+- `retry()` after `cancel()` no longer fails with `SOURCE_GONE`: a staged
+  snapshot removed by `cancel()` is re-staged from the original source before
+  re-dispatch (falling back to REFERENCE if the source is gone), and retry now
+  re-dispatches with `REPLACE` so it always forces a fresh run.
+
 ## [0.1.0] - 2026-06-14
 
 First public pre-release. Feature-complete; API may still change before 1.0.

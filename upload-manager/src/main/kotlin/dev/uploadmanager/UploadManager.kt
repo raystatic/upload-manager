@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 
 /**
@@ -168,9 +169,27 @@ object UploadManager {
     fun retry(taskId: String) {
         val c = requireCore()
         scope.launch {
-            c.dao.resetCounters(taskId, System.currentTimeMillis())
-            c.dao.clearSession(taskId, System.currentTimeMillis())
-            c.dao.getById(taskId)?.let { c.scheduler.dispatch(it) }
+            val now = System.currentTimeMillis()
+            val task = c.dao.getById(taskId)
+            c.dao.resetCounters(taskId, now)
+            c.dao.clearSession(taskId, now)
+
+            // cancel() removes the staged snapshot, but the row still references it. If
+            // it's gone, re-stage from the original source so the retry has real bytes to
+            // send instead of failing SOURCE_GONE; if the source is also gone, drop to
+            // REFERENCE so the worker at least attempts the original URI.
+            if (task != null) {
+                val staged = task.stagedPath
+                if (staged != null && !File(staged).exists()) {
+                    val restaged = withContext(Dispatchers.IO) {
+                        c.stager.stage(taskId, Uri.parse(task.localUri))
+                    }
+                    if (restaged == null) c.dao.updateStagedPath(taskId, null, now)
+                }
+            }
+
+            // REPLACE (not KEEP) so retry always forces a fresh run, even right after cancel.
+            c.dao.getById(taskId)?.let { c.scheduler.dispatchReplacing(it) }
         }
     }
 
