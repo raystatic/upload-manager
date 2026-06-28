@@ -4,19 +4,26 @@ This is the single source of truth for verifying the SDK. It maps every CUJ to
 an action in the sample app, plus the adb commands and pass criteria. Many are
 also automated as instrumented tests (`Auto?` column).
 
-> **Note on the sample UI.** The sample is now a **TikTok-style video feed** (see
-> the [README](../README.md#the-sample-app--verifying-locally)). The journeys
-> below were authored against an earlier CUJ-runner that had a button per action
-> and an in-app preset selector. They still apply — the SDK behaviour, the adb
-> commands, and the pass criteria are unchanged — with two mechanical
-> substitutions:
-> - **"upload small/large file" → tap the Upload FAB** and pick a short/long
->   video. (The headline resume-after-death journey, C-04, is exactly the feed's
->   normal flow: upload, force-stop mid-transfer, reopen.)
+> **Note on the sample UI.** The sample is now a **multi-file upload manager** with
+> email/password sign-in and a per-file list (size, progress, pause/resume/cancel),
+> and it mirrors uploads across devices on the same account (see the
+> [README](../README.md#the-sample-app--verifying-locally)). The journeys below were
+> authored against an earlier CUJ-runner that had a button per action and an in-app
+> preset selector. They still apply — the SDK behaviour, the adb commands, and the
+> pass criteria are unchanged — with two mechanical substitutions:
+> - **"upload small/large file" → tap "Select files"** and pick one or more files.
+>   (The headline resume-after-death journey, C-04, is just: start an upload,
+>   force-stop mid-transfer, reopen — it resumes.)
 > - **"switch config preset" → edit the `UploadManagerConfig` passed in
 >   [`SampleApp`](../sample/src/main/kotlin/dev/uploadmanager/sample/SampleApp.kt)**
 >   and rebuild (e.g. `dedup = DedupConfig(enabled = false)`), since the in-app
 >   preset selector was removed with the redesign.
+>
+> **Cross-device journey (X-01):** sign in with the same email/password on two
+> devices/emulators (real Firebase project, Email/Password provider on,
+> `SyncPolicy.FULL` — the sample's default). Upload files on device A; device B's list
+> shows them appear (state + size while uploading, download URL once complete). Pause
+> bytes are never mirrored, so device B shows state, not a live percentage.
 
 ## Setup
 

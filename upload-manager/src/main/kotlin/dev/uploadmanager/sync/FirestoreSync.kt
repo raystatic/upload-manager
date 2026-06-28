@@ -61,6 +61,9 @@ internal class FirestoreSync(
         put("uploadState", task.uploadState.name)
         put("priority", task.priority)
         put("storagePath", task.storagePath)
+        put("originalFilename", task.fileName)
+        put("sizeBytes", task.fileSizeBytes)
+        put("mimeType", task.mimeType)
         task.checksum?.let { put("checksum", it) }
         put("retryCount", task.retryCount)
         put("updatedAt", FieldValue.serverTimestamp())

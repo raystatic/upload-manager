@@ -9,47 +9,46 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.google.firebase.auth.FirebaseAuth
-import kotlinx.coroutines.tasks.await
 
 /**
- * Single-activity TikTok-style feed. Signs in anonymously (uploads need a Firebase
- * user), requests the notifications permission for the SDK's foreground service, then
- * shows the feed.
+ * Gates the upload list behind email/password sign-in. The same account on a second
+ * device shares the same upload list (via the SDK's Firestore sync).
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                val signedIn by produceState(initialValue = false) {
-                    value = signInIfNeeded()
+            MaterialTheme {
+                RequestNotifications()
+                var signedIn by remember {
+                    mutableStateOf(FirebaseAuth.getInstance().currentUser != null)
                 }
-
-                val requestNotifications = rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestPermission()
-                ) { }
-                LaunchedEffect(Unit) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                }
-
                 if (signedIn) {
-                    VideoFeedScreen()
+                    UploadListScreen()
+                } else {
+                    SignInScreen(onSignedIn = { signedIn = true })
                 }
             }
         }
     }
+}
 
-    private suspend fun signInIfNeeded(): Boolean {
-        val auth = FirebaseAuth.getInstance()
-        if (auth.currentUser != null) return true
-        return runCatching { auth.signInAnonymously().await() }.isSuccess
+@Composable
+private fun RequestNotifications() {
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 }

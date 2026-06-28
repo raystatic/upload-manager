@@ -298,9 +298,9 @@ it, applies the google-services plugin, and
 initialises real Firebase instead of the emulator (see its `BuildConfig.USE_EMULATOR`
 branch). That file is the canonical example of the demo-vs-production split.
 
-> **Screenshots:** the sample's UI (a TikTok-style video feed with a floating
-> upload-progress pill) is the fastest way to see the API in action; captured images
-> can live under `docs/images/`.
+> **Screenshots:** the sample's UI (a multi-file upload list with per-row progress and
+> pause/resume/cancel, mirrored across devices) is the fastest way to see the API in
+> action; captured images can live under `docs/images/`.
 
 ## Configuration reference
 
@@ -379,27 +379,33 @@ file; `StagingConfig(mode = StagingMode.REFERENCE, autoCopyBelowBytes = 0)` disa
 
 ## The sample app & verifying locally
 
-The [`sample/`](sample) app is a **TikTok-style vertical video feed** that shows the
-SDK doing its job in a realistic product: tap the **Upload** FAB, pick a video, and
-return to scrolling immediately — the upload runs in the background (WorkManager +
-resumable Firebase transfer) while a floating pill reports progress, and the finished
-video drops into the top of the feed. It runs against the Firebase Emulator Suite with
-no `google-services.json` needed.
+The [`sample/`](sample) app is an **upload manager** that shows the SDK doing its job
+in a realistic product. You sign in with email + password, tap **Select files** to
+pick **multiple files at once**, and each one uploads in the background with its own
+**file size, live progress, and pause/resume/cancel controls**. Because the SDK
+mirrors task state to Firestore (`SyncPolicy.FULL`), **a second device signed in to the
+same account sees every upload appear live** — that's why sign-in is email/password,
+not anonymous (anonymous auth gives each device a different `uid`, so it couldn't share
+a list).
 
 ```bash
 cd firebase && firebase emulators:start --project demo-upload-manager   # terminal 1
 ./gradlew :sample:installDebug                                           # terminal 2
 ```
 
-The feed is built from three small files worth reading as integration examples:
-[`FeedViewModel`](sample/src/main/kotlin/dev/uploadmanager/sample/FeedViewModel.kt)
-(enqueue + `observe(taskId)` → pill state + feed sync),
-[`VideoFeedScreen`](sample/src/main/kotlin/dev/uploadmanager/sample/VideoFeedScreen.kt)
-(`VerticalPager` + a single shared ExoPlayer + the picker FAB), and
-[`UploadPill`](sample/src/main/kotlin/dev/uploadmanager/sample/UploadPill.kt)
-(the floating progress/complete/error chip). Because the upload is just
-`UploadManager.enqueue(...)`, killing the app mid-upload and reopening it resumes the
-transfer — the headline CUJ, visible in the feed.
+> **Cross-device demo** needs a real project (two devices can't share one local
+> emulator): drop in your `google-services.json`, enable the **Email/Password** auth
+> provider, deploy the rules (Step 4), then sign in with the same credentials on both
+> devices.
+
+The app is built from a few small files worth reading as integration examples:
+[`UploadsViewModel`](sample/src/main/kotlin/dev/uploadmanager/sample/UploadsViewModel.kt)
+(enqueue + merge `observeAll()` with a live Firestore view of the account's uploads),
+[`UploadListScreen`](sample/src/main/kotlin/dev/uploadmanager/sample/UploadListScreen.kt)
+(multi-select picker, per-row size/progress/controls), and
+[`SignInScreen`](sample/src/main/kotlin/dev/uploadmanager/sample/SignInScreen.kt).
+Because the upload is just `UploadManager.enqueue(...)`, killing the app mid-upload and
+reopening it resumes the transfer — the headline CUJ, visible in the list.
 
 **Every CUJ, how to run it, and its pass criteria are in
 [docs/CUJS.md](docs/CUJS.md).** The automated subset runs
@@ -431,7 +437,7 @@ enqueue → fingerprint/stage → Room(PENDING) → WorkManager
 
 ```
 upload-manager/   the SDK (Android library; public API = UploadManager + api/)
-sample/           Compose TikTok-style video-feed demo (Firebase Emulator Suite)
+sample/           Compose multi-file upload-manager demo (cross-device via Firestore)
 firebase/         security-rules templates + emulator config
 docs/             ARCHITECTURE, CUJS, VERIFYING, spec + revision docs
 ```

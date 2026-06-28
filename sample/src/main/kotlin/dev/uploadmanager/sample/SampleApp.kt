@@ -7,6 +7,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import dev.uploadmanager.UploadManager
+import dev.uploadmanager.api.SyncPolicy
 import dev.uploadmanager.api.UploadManagerConfig
 
 /**
@@ -36,7 +37,16 @@ class SampleApp : Application() {
             // before enqueuing, if you require request-integrity enforcement.
         }
 
-        UploadManager.initialise(this, UploadManagerConfig(enableLogging = BuildConfig.DEBUG))
+        // SyncPolicy.FULL mirrors each task's lifecycle (and its completed-file record)
+        // to Firestore, so a second device signed in as the *same* account sees uploads
+        // appear live. Room stays the source of truth; progress bytes are never mirrored.
+        UploadManager.initialise(
+            this,
+            UploadManagerConfig(
+                enableLogging = BuildConfig.DEBUG,
+                syncPolicy = SyncPolicy.FULL,
+            ),
+        )
     }
 
     private fun initialiseForEmulator() {
