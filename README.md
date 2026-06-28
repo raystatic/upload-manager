@@ -15,9 +15,9 @@ so you never write upload plumbing again.
 > Both the unit and the on-emulator instrumented test suites are green on every
 > push.
 
-## Demo
 
 https://github.com/user-attachments/assets/c49ca34d-8810-4d80-a187-e8418a7e1fce
+
 
 ## Table of contents
 
