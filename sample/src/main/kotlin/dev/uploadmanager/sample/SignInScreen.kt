@@ -23,6 +23,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -99,17 +100,23 @@ fun SignInScreen(onSignedIn: () -> Unit) {
 /** Sign in; if the account doesn't exist yet, create it (so first run on a device works). */
 private suspend fun signInOrCreate(email: String, password: String): Result<Unit> {
     val auth = FirebaseAuth.getInstance()
-    return runCatching { auth.signInWithEmailAndPassword(email, password).await() }
-        .map { }
-        .recoverCatching { signInError ->
-            // No such user yet → create it. Any other error (wrong password) rethrows.
-            if (!signInError.isNoSuchUser()) throw signInError
-            auth.createUserWithEmailAndPassword(email, password).await()
-            Unit
-        }
-}
 
-private fun Throwable.isNoSuchUser(): Boolean {
-    val msg = message?.lowercase().orEmpty()
-    return "no user record" in msg || "there is no user" in msg
+    // 1. Try to sign in to an existing account.
+    runCatching { auth.signInWithEmailAndPassword(email, password).await() }
+        .onSuccess { return Result.success(Unit) }
+
+    // 2. Sign-in failed. With Firebase's Email Enumeration Protection (on by default),
+    //    "no such account" and "wrong password" return the *same* generic error, so we
+    //    can't tell them apart from the message. Just try to create the account:
+    //    it succeeds if the email is new, and fails with "email already in use" only
+    //    when the account exists and the password was simply wrong.
+    val created = runCatching { auth.createUserWithEmailAndPassword(email, password).await() }
+    created.onSuccess { return Result.success(Unit) }
+
+    val cause = created.exceptionOrNull()
+    return if (cause is FirebaseAuthUserCollisionException) {
+        Result.failure(Exception("That email already has an account — wrong password."))
+    } else {
+        Result.failure(cause ?: Exception("Sign-in failed"))
+    }
 }
