@@ -35,9 +35,8 @@ class SampleApp : Application() {
             // before enqueuing, if you require request-integrity enforcement.
         }
 
-        // The SDK is configured the same way regardless of backend. The sample uses
-        // the in-app preset selector; a real app passes its own UploadManagerConfig.
-        UploadManager.initialise(this, Preset.current(this).toConfig())
+        // Initialize the SDK with default config
+        UploadManager.initialise(this, dev.uploadmanager.api.UploadManagerConfig(enableLogging = true))
     }
 
     private fun initialiseForEmulator() {
