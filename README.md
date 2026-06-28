@@ -16,7 +16,7 @@ so you never write upload plumbing again.
 > push.
 
 
-https://github.com/user-attachments/assets/c49ca34d-8810-4d80-a187-e8418a7e1fce
+https://github.com/user-attachments/assets/9581b1aa-650a-414b-b409-218356e960c4
 
 
 ## Table of contents
