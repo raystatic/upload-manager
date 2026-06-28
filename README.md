@@ -36,10 +36,6 @@ https://github.com/user-attachments/assets/9581b1aa-650a-414b-b409-218356e960c4
 
 ## Quick start
 
-The leanest setup — resumable uploads + retry + persistence across process death,
-on **Storage + Auth only** (no Firestore). For the full feature path (dedup,
-cross-device sync) see [Production integration](#production-integration--step-by-step).
-
 ```kotlin
 // settings.gradle.kts → dependencyResolutionManagement { repositories { … } }
 maven("https://jitpack.io")
@@ -51,21 +47,27 @@ implementation("com.github.raystatic.upload-manager:upload-manager:v0.1.1")
 implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
 implementation("com.google.firebase:firebase-auth")
 implementation("com.google.firebase:firebase-storage")
+implementation("com.google.firebase:firebase-firestore")   // dedup is on by default
 ```
 
 ```kotlin
 // Application.onCreate() — your app owns Firebase init + sign-in
 FirebaseApp.initializeApp(this)
-UploadManager.initialise(this, UploadManagerConfig(dedup = DedupConfig(enabled = false)))
+UploadManager.initialise(this, UploadManagerConfig())   // sensible defaults; dedup on
 
 // Once a user is signed in (any FirebaseAuth provider, incl. anonymous):
 val taskId = UploadManager.enqueue(UploadRequest(uri, "image/jpeg", "photo.jpg"))
 UploadManager.observe(taskId).collect { event -> /* Progress / Completed / Failed */ }
 ```
 
-**Two backend steps are required:** enable **Auth + Cloud Storage** in your Firebase
-project, and **deploy the Storage rules** (Step 4) — until the rules are published,
-every upload fails with `PERMISSION_DENIED`. That's the whole setup for the lean path.
+**Backend setup:** enable **Auth + Cloud Storage + Cloud Firestore** in your Firebase
+project, and **deploy the bundled rules** (Step 4) — until the rules are published,
+every upload fails with `PERMISSION_DENIED`.
+
+> **Want a leaner setup?** Deduplication (on by default) is the only thing that needs
+> Firestore. Pass `UploadManagerConfig(dedup = DedupConfig(enabled = false))` and you
+> can drop the Firestore dependency and its rules — leaving just Storage + Auth. See
+> [Optional features & their trade-offs](#optional-features--their-trade-offs).
 
 ## What is this
 
