@@ -167,18 +167,49 @@ builds.
 
 ### Step 4 — Deploy the security rules (the only backend setup)
 
-Copy [`firebase/storage.rules`](firebase/storage.rules) (and
-[`firebase/firestore.rules`](firebase/firestore.rules) if using dedup/sync) into
-your project and deploy:
+**Why this step exists.** Security Rules are the lock on your data's front door:
+Firebase checks them on *every* read/write and asks "is this caller allowed?" When
+you create Storage or Firestore in **production mode**, the default answer is **"deny
+everyone"** — the door is locked shut. So until you publish rules that allow it,
+**every upload fails with `PERMISSION_DENIED`.** The bundled rules replace the
+deny-all with a precise, safe policy: *a signed-in user may read/write only their
+own files under `users/{their-uid}/…`, and nobody else's.* That's exactly what the
+SDK needs. **Do not skip this** — and never use "test mode," which opens your bucket
+to the whole internet.
+
+You only need the Firestore rules if **dedup (on by default) or `SyncPolicy`** is
+enabled; otherwise Storage rules alone are enough.
+
+There are two ways to deploy — pick one.
+
+**Option A — Firebase Console (no command line, easiest):**
+
+1. [Firebase console](https://console.firebase.google.com) → your project.
+2. **Build → Storage → Rules** tab. Select all the existing text, delete it, paste
+   the contents of [`firebase/storage.rules`](firebase/storage.rules), click **Publish**.
+3. (If using dedup/sync) **Build → Firestore Database → Rules** tab. Select all,
+   delete, paste [`firebase/firestore.rules`](firebase/firestore.rules), click **Publish**.
+
+Changes go live in a few seconds. (A default line like `allow read, write: if false;`
+is the "deny everyone" you're replacing — deleting it is correct.)
+
+**Option B — Firebase CLI (deploys straight from the repo files):**
 
 ```bash
-firebase deploy --only storage
-firebase deploy --only firestore:rules   # if dedup or SyncPolicy != NONE
+npm install -g firebase-tools          # once
+firebase login                         # opens a browser
+cd firebase                            # where firebase.json + the .rules files live
+firebase use --add                     # pick your project (creates .firebaserc)
+firebase deploy --only storage,firestore:rules
 ```
 
-These scope every object and index entry to `users/{uid}/` and reject all
-cross-user access. **Do not skip this** — uploads to an unprotected bucket are a
-security hole.
+To deploy them separately: `firebase deploy --only storage` and
+`firebase deploy --only firestore:rules`.
+
+Either way, the rules scope every object and index entry to `users/{uid}/` and reject
+all cross-user access. After publishing, upload a file and confirm it lands under
+`users/<uid>/files/…` in your bucket; a `PERMISSION_DENIED` in
+`adb logcat -s UploadManager:D` almost always means a rule wasn't published.
 
 ### Step 5 — Initialise Firebase and sign the user in (your app's job)
 
