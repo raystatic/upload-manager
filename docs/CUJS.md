@@ -1,8 +1,22 @@
 # Critical User Journeys — one place to test everything
 
 This is the single source of truth for verifying the SDK. It maps every CUJ to
-**a button (and config preset) in the sample app**, plus the adb commands and
-pass criteria. Many are also automated as instrumented tests (`Auto?` column).
+an action in the sample app, plus the adb commands and pass criteria. Many are
+also automated as instrumented tests (`Auto?` column).
+
+> **Note on the sample UI.** The sample is now a **TikTok-style video feed** (see
+> the [README](../README.md#the-sample-app--verifying-locally)). The journeys
+> below were authored against an earlier CUJ-runner that had a button per action
+> and an in-app preset selector. They still apply — the SDK behaviour, the adb
+> commands, and the pass criteria are unchanged — with two mechanical
+> substitutions:
+> - **"upload small/large file" → tap the Upload FAB** and pick a short/long
+>   video. (The headline resume-after-death journey, C-04, is exactly the feed's
+>   normal flow: upload, force-stop mid-transfer, reopen.)
+> - **"switch config preset" → edit the `UploadManagerConfig` passed in
+>   [`SampleApp`](../sample/src/main/kotlin/dev/uploadmanager/sample/SampleApp.kt)**
+>   and rebuild (e.g. `dedup = DedupConfig(enabled = false)`), since the in-app
+>   preset selector was removed with the redesign.
 
 ## Setup
 
@@ -15,16 +29,16 @@ cd firebase && firebase emulators:start --project demo-upload-manager
 adb logcat -s UploadManager:D
 ```
 
-The sample's top card shows the active **config preset**. Tap **Change preset**
-to switch (Default, Reference/no-staging, Copy always, Dedup off, Firestore sync
-FULL, Adaptive off, WiFi only) — it persists the choice and restarts the app. The
-in-app **Recent events** card mirrors the structured events for quick feedback.
+Config variations (Reference/no-staging, Copy always, Dedup off, Firestore sync
+FULL, Adaptive off, WiFi only) are selected by editing the `UploadManagerConfig`
+in [`SampleApp`](../sample/src/main/kotlin/dev/uploadmanager/sample/SampleApp.kt)
+and rebuilding. Watch behaviour via Logcat (`UploadManager:D`) and the tools below.
 
 ### Observation toolkit
 
 | Tool | Use |
 | --- | --- |
-| In-app Recent events / Logcat `UploadManager` | `enqueued, started(resuming), paused, retry, PARKED, completed, DEDUP_HIT, FAILED` |
+| Logcat `UploadManager` (debug builds) | `enqueued, started(resuming), paused, retry, PARKED, completed, DEDUP_HIT, FAILED` |
 | App Inspection → **Background Task Inspector** | live WorkManager workers + constraints |
 | App Inspection → **Database Inspector** (`upload_manager.db`) | `uploadState, uploadedBytes, uploadSessionUri, checksum, stagedPath, parkCount` |
 | Storage Emulator UI (http://127.0.0.1:4000) | objects under `users/{uid}/files/...`; custom metadata `checksum` |

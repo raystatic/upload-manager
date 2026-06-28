@@ -267,9 +267,9 @@ it, applies the google-services plugin, and
 initialises real Firebase instead of the emulator (see its `BuildConfig.USE_EMULATOR`
 branch). That file is the canonical example of the demo-vs-production split.
 
-> **Screenshots:** the sample's UI (preset bar, CUJ buttons, live task list, event
-> log) is the fastest way to see the API in action; captured images can live under
-> `docs/images/`.
+> **Screenshots:** the sample's UI (a TikTok-style video feed with a floating
+> upload-progress pill) is the fastest way to see the API in action; captured images
+> can live under `docs/images/`.
 
 ## Configuration reference
 
@@ -348,22 +348,29 @@ file; `StagingConfig(mode = StagingMode.REFERENCE, autoCopyBelowBytes = 0)` disa
 
 ## The sample app & verifying locally
 
-The [`sample/`](sample) app is a Compose demo with **one screen per use case** —
-it runs against the Firebase Emulator Suite with no `google-services.json` needed.
+The [`sample/`](sample) app is a **TikTok-style vertical video feed** that shows the
+SDK doing its job in a realistic product: tap the **Upload** FAB, pick a video, and
+return to scrolling immediately — the upload runs in the background (WorkManager +
+resumable Firebase transfer) while a floating pill reports progress, and the finished
+video drops into the top of the feed. It runs against the Firebase Emulator Suite with
+no `google-services.json` needed.
 
 ```bash
 cd firebase && firebase emulators:start --project demo-upload-manager   # terminal 1
 ./gradlew :sample:installDebug                                           # terminal 2
 ```
 
-The **Home** screen lists the CUJs; each screen (basic upload, resume-after-kill,
-pause/resume/cancel, retry/park, staging, dedup, adaptive concurrency, reboot)
-**explains what it demonstrates, how to trigger it (incl. the exact adb command),
-and what to watch**, with the action button, a live task list, and an event log.
-A **config-preset selector** on Home (Default, Reference/no-staging, Copy, Dedup
-off, Sync FULL, Adaptive off, WiFi only) switches behavior for the relevant CUJs.
+The feed is built from three small files worth reading as integration examples:
+[`FeedViewModel`](sample/src/main/kotlin/dev/uploadmanager/sample/FeedViewModel.kt)
+(enqueue + `observe(taskId)` → pill state + feed sync),
+[`VideoFeedScreen`](sample/src/main/kotlin/dev/uploadmanager/sample/VideoFeedScreen.kt)
+(`VerticalPager` + a single shared ExoPlayer + the picker FAB), and
+[`UploadPill`](sample/src/main/kotlin/dev/uploadmanager/sample/UploadPill.kt)
+(the floating progress/complete/error chip). Because the upload is just
+`UploadManager.enqueue(...)`, killing the app mid-upload and reopening it resumes the
+transfer — the headline CUJ, visible in the feed.
 
-**Every CUJ, how to run it, and its pass criteria are also in
+**Every CUJ, how to run it, and its pass criteria are in
 [docs/CUJS.md](docs/CUJS.md).** The automated subset runs
 on an emulator in CI on every push; the headline manual ones
 (resume-after-death, park→recovery, source-gone/restart, battery throttling,
@@ -393,7 +400,7 @@ enqueue → fingerprint/stage → Room(PENDING) → WorkManager
 
 ```
 upload-manager/   the SDK (Android library; public API = UploadManager + api/)
-sample/           Compose CUJ-runner app (Firebase Emulator Suite)
+sample/           Compose TikTok-style video-feed demo (Firebase Emulator Suite)
 firebase/         security-rules templates + emulator config
 docs/             ARCHITECTURE, CUJS, VERIFYING, spec + revision docs
 ```
